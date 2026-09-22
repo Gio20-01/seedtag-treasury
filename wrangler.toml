@@ -8,7 +8,7 @@ compatibility_date = "2026-08-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "seedtag-treasury-db"
-database_id = "REPLACE_WITH_D1_DATABASE_ID"
+database_id = "b5c0643b-346d-499c-bcc7-3d52e22cb294"
 
 [vars]
 SHEET_ID = "1cjCJWSdIlhTY1-DRIJjmCM-RoEEe0OYB0iVIX3gkPfs"
