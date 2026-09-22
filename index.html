@@ -1,1 +1,97 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Treasury - Reimbursements</title>
+<style>
+  :root {
+    --th-primary: #1F4E78;   /* placeholder: allinea con le CSS var esatte dell'HR Dashboard */
+    --th-primary-light: #E8EEF4;
+    --th-bg: #F7F8FA;
+    --th-text: #23272B;
+    --th-muted: #6B7280;
+    --th-danger: #C0392B;
+    --th-ok: #2E7D32;
+    --th-warn: #B7791F;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--th-bg); color: var(--th-text); }
 
+  .screen { min-height: 100vh; display:flex; align-items:center; justify-content:center; padding: 24px; }
+  .card { background:#fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 32px; max-width: 440px; width:100%; }
+  .card h1 { font-size: 18px; margin: 0 0 8px; color: var(--th-primary); }
+  .card p { font-size: 14px; color: var(--th-muted); line-height:1.5; }
+  .card a { color: var(--th-primary); }
+
+  .btn { display:inline-block; background: var(--th-primary); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
+  .btn:hover { opacity:.92; }
+  .btn-secondary { background:#fff; color: var(--th-primary); border:1px solid var(--th-primary); }
+
+  textarea, input { width:100%; border:1px solid #D8DCE1; border-radius:8px; padding:10px; font-size:14px; margin: 8px 0 16px; font-family:inherit; }
+
+  /* overlay modal pattern - window.confirm/alert are blocked in the Sites iframe */
+  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:100; }
+  .overlay.open { display:flex; }
+  .overlay .card { max-width: 380px; }
+
+  .app-shell { display:none; }
+  .app-shell.open { display:block; }
+  .topbar { position: sticky; top:0; background: var(--th-primary); color:#fff; padding: 14px 20px; font-size:15px; z-index: 10; }
+</style>
+</head>
+<body>
+
+  <!-- ACCESS DENIED / REQUEST ACCESS -->
+  <div id="screen-denied" class="screen">
+    <div class="card">
+      <h1>Accesso non disponibile</h1>
+      <p>
+        Il tuo account non ha ancora un ruolo assegnato per Treasury Reimbursements.
+        Contatta <a href="mailto:talent@seedtag.com">People &amp; Talent</a> o
+        <a href="mailto:treasury@seedtag.com">FinOps Treasury</a>, oppure richiedi
+        l'accesso qui sotto.
+      </p>
+      <button class="btn" id="btn-open-request">Richiedi accesso</button>
+    </div>
+  </div>
+
+  <!-- REQUEST ACCESS MODAL -->
+  <div id="overlay-request" class="overlay">
+    <div class="card">
+      <h1>Richiedi accesso</h1>
+      <p>Un SuperAdmin dovrà approvare la richiesta prima che tu possa accedere.</p>
+      <textarea id="input-reason" rows="3" placeholder="Motivo della richiesta (opzionale)"></textarea>
+      <button class="btn" id="btn-submit-request">Invia richiesta</button>
+      <button class="btn btn-secondary" id="btn-cancel-request" style="margin-left:8px;">Annulla</button>
+    </div>
+  </div>
+
+  <!-- AUTHENTICATED SHELL (placeholder - dashboard/config vanno qui nel prossimo step) -->
+  <div id="app-shell" class="app-shell">
+    <div class="topbar">Treasury - Reimbursements</div>
+    <div style="padding:24px;">
+      <p>Shell autenticata - dashboard richieste, config e detail view arrivano nel prossimo step.</p>
+    </div>
+  </div>
+
+<script>
+  // Placeholder wiring - la vera chiamata a /api/me e il postMessage bridge
+  // verso il GAS Auth Bridge / Centrale vanno agganciati come negli altri moduli.
+
+  document.getElementById('btn-open-request').addEventListener('click', function () {
+    document.getElementById('overlay-request').classList.add('open');
+  });
+  document.getElementById('btn-cancel-request').addEventListener('click', function () {
+    document.getElementById('overlay-request').classList.remove('open');
+  });
+  document.getElementById('btn-submit-request').addEventListener('click', async function () {
+    const reason = document.getElementById('input-reason').value;
+    // TODO: sostituire con la vera chiamata al Worker (con header auth iniettati
+    // dal Centrale), stesso pattern usato negli altri moduli People Hub 2.0.
+    console.log('request access, reason:', reason);
+    document.getElementById('overlay-request').classList.remove('open');
+  });
+</script>
+</body>
+</html>
