@@ -2,9 +2,8 @@ name = "seedtag-treasury"
 main = "src/index.js"
 compatibility_date = "2026-08-01"
 
-# workers.dev URL must be DISABLED after first deploy (Cloudflare dashboard ->
-# Settings -> Domains & Routes) to prevent header-forgery bypass of the
-# Centrale auth - same rule as every other specific Worker in People Hub 2.0.
+# workers.dev URL va DISABILITATO dopo il primo deploy (Dashboard -> Settings
+# -> Domains & Routes), stessa regola di ogni altro Worker specifico.
 
 [[d1_databases]]
 binding = "DB"
@@ -14,14 +13,26 @@ database_id = "REPLACE_WITH_D1_DATABASE_ID"
 [vars]
 SHEET_ID = "1cjCJWSdIlhTY1-DRIJjmCM-RoEEe0OYB0iVIX3gkPfs"
 ADJDATA_TAB = "[IMPORT] AdjData"
-TREASURY_EMAIL_GAS_URL = "REPLACE_WITH_EMAIL_SENDER_WEBAPP_URL"
 PAYMENT_DAY_DEFAULT = "10"
 
-# Secrets - set via `wrangler secret put <NAME>`, never in this file:
-#   INTERNAL_SECRET       (shared with Centrale, validates X-Internal-Auth)
-#   GOOGLE_SA_KEY          (Service Account JSON, Sheets API read access)
-#   TREASURY_GAS_SECRET    (shared with Treasury_Email_Sender.gs)
+# URL pubblico del Worker Centrale - usato SOLO dal cron per richiamarsi
+# attraverso il path server-to-server (vedi Pattern_SA_Token_Relay.md)
+CENTRALE_URL = "https://seedtag-auth-test.<tuo-subdomain>.workers.dev"
+
+# URL dei due GAS standalone (Web App), non sensibili di per sé
+TREASURY_EMAIL_GAS_URL = "REPLACE_WITH_EMAIL_SENDER_WEBAPP_URL"
+TREASURY_IMPORT_GAS_URL = "REPLACE_WITH_IMPORT_WEBAPP_URL"
+
+# Secrets - MAI in questo file, solo via `wrangler secret put <NOME>`:
+#   INTERNAL_SECRET          (condiviso con TUTTI i Worker + il Centrale)
+#   TREASURY_GAS_SECRET      (condiviso con Treasury_Email_Sender.gs)
+#   TREASURY_IMPORT_GAS_SECRET  (condiviso con il doGet del GAS import)
+#   TREASURY_CRON_SECRET     (validato dall'endpoint /internal/cron-diff)
+#
+# NIENTE GOOGLE_SA_KEY qui: il token Google arriva via X-SA-Token dal
+# Centrale ad ogni richiesta (vedi Pattern_SA_Token_Relay.md).
 
 [triggers]
-# Daily changelog diff, 15 min after the GAS Personio import (2:00 AM)
+# Cron nudo, nessun header/token disponibile: il worker richiama il Centrale
+# su un path server-to-server dedicato, che gli restituirà X-SA-Token.
 crons = ["15 2 * * *"]
