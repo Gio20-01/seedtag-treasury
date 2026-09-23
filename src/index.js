@@ -1,4 +1,4 @@
-import { readSheetTab, upsertPermissionListRow } from './sheets.js';
+import { readSheetTab, upsertPermissionListRow, appendSheetRows } from './sheets.js';
 import { matchAndEvaluate, findEmailKey } from './matching.js';
 
 const ROLE_RANK = { 'SuperAdminExtra': 4, 'SuperAdmin': 3, 'Admin': 2, 'Treasury Ops': 1 };
@@ -78,18 +78,6 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // ── Endpoint interno per il cron (server-to-server, nessun utente reale) ──
-    // Il Centrale instrada qui SENZA validare un token utente (percorso in
-    // SERVER_TO_SERVER_PATHS lato Centrale) - la validazione qui è sul secret
-    // dedicato, X-Internal-Auth da solo dice solo "sei passato dal Centrale".
-    if (path === '/api/treasury/internal/cron-diff' && request.method === 'POST') {
-      const providedSecret = url.searchParams.get('secret') || (await request.json().catch(() => ({}))).secret;
-      if (providedSecret !== env.TREASURY_CRON_SECRET) return json({ error: 'unauthorized' }, 401, origin);
-      const accessToken = request.headers.get('X-SA-Token');
-      ctx.waitUntil(runDailyChangelogDiff(env, accessToken));
-      return json({ ok: true, started: true }, 200, origin);
-    }
-
     const userEmail = request.headers.get('X-User-Email');
     const accessToken = request.headers.get('X-SA-Token');
 
@@ -102,6 +90,18 @@ export default {
 
       if (path === '/api/treasury/access-requests' && request.method === 'POST') {
         return await createAccessRequest(request, env, userEmail, origin);
+      }
+
+      // Chiamato dal GAS import (via Centrale, server-to-server - vedi
+      // Pattern_SA_Token_Relay.md) subito dopo ogni import di Personio,
+      // giornaliero o on-demand. Nessun utente reale, quindi nessun ruolo da
+      // controllare qui - solo il secret dedicato, letto dal body.
+      if (path === '/api/treasury/internal/ingest-changelog' && request.method === 'POST') {
+        const body = await request.json();
+        if (body.secret !== env.TREASURY_IMPORT_GAS_SECRET) return json({ error: 'unauthorized' }, 401, origin);
+        const s2sToken = request.headers.get('X-SA-Token'); // il Centrale lo passa anche nelle chiamate server-to-server
+        await runDailyChangelogDiff(env, body.bankRows || [], body.adjRows || [], s2sToken);
+        return json({ ok: true }, 200, origin);
       }
 
       if (!requireRole(resolved, 'Treasury Ops')) {
@@ -160,18 +160,6 @@ export default {
     } catch (err) {
       return json({ error: err.message }, 500, origin);
     }
-  },
-
-  // Cloudflare Cron Trigger invoca questo direttamente (nessun header, nessun
-  // token) - da qui NON possiamo chiamare Sheets API. Ci limitiamo a
-  // richiamare il Centrale sul path server-to-server dedicato, che farà lui
-  // il JWT e ci passerà indietro X-SA-Token, come una richiesta normale.
-  async scheduled(event, env, ctx) {
-    ctx.waitUntil(
-      fetch(env.CENTRALE_URL + '/api/treasury/internal/cron-diff?secret=' + encodeURIComponent(env.TREASURY_CRON_SECRET), {
-        method: 'POST'
-      }).catch((e) => console.error('[cron trigger call]', e.message))
-    );
   }
 };
 
@@ -378,17 +366,15 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
 }
 
 // ------------------------------------------------------------
-// Daily cron: diff current Personio mirror against treasury_field_snapshot
+// Changelog: confronta i dati appena ricevuti dal GAS (bankRows/adjRows)
+// contro treasury_field_snapshot in D1. Non legge MAI lo Sheet direttamente -
+// i dati arrivano già pronti nel body della richiesta del GAS.
 // ------------------------------------------------------------
 const TRACKED_META_FIELDS = ['Status', 'Country'];
 
-async function runDailyChangelogDiff(env, accessToken) {
-  const [bankRows, adjRows] = await Promise.all([
-    readSheetTab(accessToken, env.SHEET_ID, 'Personio Bank Data'),
-    readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
-  ]);
+async function runDailyChangelogDiff(env, bankRows, adjRows, accessToken) {
   const today = new Date().toISOString().slice(0, 10);
-
+  const nowIso = new Date().toISOString();
   const { REQUIREMENTS, resolveCountry } = await import('./matching.js');
 
   const bankByEmail = {};
@@ -396,6 +382,8 @@ async function runDailyChangelogDiff(env, accessToken) {
     const e = String(r.Email || '').trim().toLowerCase();
     if (e) bankByEmail[e] = r;
   });
+
+  const changesForSheetMirror = []; // righe pronte per il mirror, solo se accessToken disponibile
 
   for (const adjRow of adjRows) {
     const email = String(adjRow.Email || '').trim().toLowerCase();
@@ -408,6 +396,7 @@ async function runDailyChangelogDiff(env, accessToken) {
       : [];
     const metaSource = { Status: adjRow.Status, Country: adjRow.Country };
     const trackedFields = TRACKED_META_FIELDS.concat(bankFields);
+    const name = [adjRow['First name'], adjRow['Last name']].filter(Boolean).join(' ');
 
     for (const field of trackedFields) {
       const isMeta = TRACKED_META_FIELDS.indexOf(field) !== -1;
@@ -430,15 +419,29 @@ async function runDailyChangelogDiff(env, accessToken) {
         await env.DB.prepare(
           `INSERT INTO treasury_changelog (email, name, country, field, before_value, after_value, changed_date)
            VALUES (?, ?, ?, ?, ?, ?, ?)`
-        ).bind(
-          email, [adjRow['First name'], adjRow['Last name']].filter(Boolean).join(' '), country,
-          field, beforeValue, afterValue, today
-        ).run();
+        ).bind(email, name, country, field, beforeValue, afterValue, today).run();
 
         await env.DB.prepare(
           "UPDATE treasury_field_snapshot SET value = ?, updated_at = datetime('now') WHERE email = ? AND field = ?"
         ).bind(afterValue, email, field).run();
+
+        changesForSheetMirror.push([email, name, country, field, beforeValue, afterValue, today, nowIso]);
       }
+    }
+  }
+
+  // Mirror su Sheet, tab "Changelog" - solo se abbiamo un token (le chiamate
+  // server-to-server dal Centrale lo passano sempre). Non bloccante: se
+  // fallisce, il changelog resta comunque salvo su D1, che è la fonte vera.
+  if (accessToken && changesForSheetMirror.length) {
+    try {
+      await appendSheetRows(
+        accessToken, env.SHEET_ID, 'Changelog',
+        ['Email', 'Name', 'Country', 'Field', 'Before', 'After', 'Changed Date', 'Detected At'],
+        changesForSheetMirror
+      );
+    } catch (e) {
+      console.error('[changelog sheet mirror]', e.message);
     }
   }
 }
