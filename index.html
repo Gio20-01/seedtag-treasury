@@ -3,95 +3,215 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Treasury - Reimbursements</title>
+<title>Treasury · Reimbursements</title>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  :root {
-    --th-primary: #1F4E78;   /* placeholder: allinea con le CSS var esatte dell'HR Dashboard */
-    --th-primary-light: #E8EEF4;
-    --th-bg: #F7F8FA;
-    --th-text: #23272B;
-    --th-muted: #6B7280;
-    --th-danger: #C0392B;
-    --th-ok: #2E7D32;
-    --th-warn: #B7791F;
-  }
-  * { box-sizing: border-box; }
-  body { margin:0; font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif; background: var(--th-bg); color: var(--th-text); }
+:root {
+  --accent:#2563B0; --accent-light:#eaf1fb; --accent-border:rgba(37,99,176,.25);
+  --bg:#f9f7f5; --white:#ffffff;
+  --t1:#1c1917; --t2:#6b6562; --t3:#b5b0ab;
+  --b1:#ede9e5; --b2:#d9d4cf;
+  --sw:230px; --sc:52px; --hh:56px;
+  --rsm:10px; --rmd:14px; --rlg:20px; --rxl:28px;
+  --shadow:0 2px 12px rgba(28,25,23,.06);
+  --ok:#1E7A45; --below:#B07A00; --poor:#B02A2A; --exc:#6B4FCC; --above:#2563B0;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{height:100%;}
+body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--t1);}
 
-  .screen { min-height: 100vh; display:flex; align-items:center; justify-content:center; padding: 24px; }
-  .card { background:#fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.08); padding: 32px; max-width: 440px; width:100%; }
-  .card h1 { font-size: 18px; margin: 0 0 8px; color: var(--th-primary); }
-  .card p { font-size: 14px; color: var(--th-muted); line-height:1.5; }
-  .card a { color: var(--th-primary); }
+/* ── Loading overlay ─────────────────────────────────────── */
+#lo{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s;}
+#lo.fo{opacity:0;pointer-events:none;}
+.aologc{width:40px;height:40px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
+.aopt{width:220px;height:4px;background:var(--b1);border-radius:2px;overflow:hidden;}
+.aopf{height:100%;background:var(--accent);border-radius:2px;width:10%;transition:width .4s;}
+.aolbl{font-size:13px;color:var(--t2);}
 
-  .btn { display:inline-block; background: var(--th-primary); color:#fff; border:none; border-radius:8px; padding:10px 16px; font-size:14px; cursor:pointer; }
-  .btn:hover { opacity:.92; }
-  .btn-secondary { background:#fff; color: var(--th-primary); border:1px solid var(--th-primary); }
+/* ── Error / access-denied overlays ──────────────────────── */
+#es,#ps{display:none;position:fixed;inset:0;background:var(--bg);align-items:center;justify-content:center;z-index:9998;}
+.gbox{background:var(--white);border:1px solid var(--b1);border-radius:var(--rxl);box-shadow:var(--shadow);padding:40px;max-width:440px;text-align:center;}
+.gbox .em{font-size:32px;margin-bottom:12px;}
+.gbox h2{font-size:19px;margin-bottom:10px;}
+.gbox p{font-size:13.5px;color:var(--t2);line-height:1.6;}
+.gbox a{color:var(--accent);}
+.gbtn{margin-top:18px;border:0;background:var(--accent);color:#fff;border-radius:var(--rsm);padding:10px 18px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.gbtn.ghost{background:var(--accent-light);color:var(--accent);}
 
-  textarea, input { width:100%; border:1px solid #D8DCE1; border-radius:8px; padding:10px; font-size:14px; margin: 8px 0 16px; font-family:inherit; }
+/* ── Request-access modal (mai window.confirm/prompt) ────── */
+.overlay{position:fixed;inset:0;background:rgba(28,25,23,.35);display:none;align-items:center;justify-content:center;z-index:10000;}
+.overlay.open{display:flex;}
+.overlay .gbox{text-align:left;}
+.overlay textarea{width:100%;border:1px solid var(--b2);border-radius:var(--rsm);padding:10px;font:inherit;font-size:13px;margin:12px 0 16px;resize:vertical;}
+.overlay .row{display:flex;gap:8px;margin-top:4px;}
 
-  /* overlay modal pattern - window.confirm/alert are blocked in the Sites iframe */
-  .overlay { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:100; }
-  .overlay.open { display:flex; }
-  .overlay .card { max-width: 380px; }
-
-  .app-shell { display:none; }
-  .app-shell.open { display:block; }
-  .topbar { position: sticky; top:0; background: var(--th-primary); color:#fff; padding: 14px 20px; font-size:15px; z-index: 10; }
+/* ── Authenticated shell ──────────────────────────────────── */
+#app{display:none;height:100vh;flex-direction:column;}
+.topbar{height:var(--hh);background:var(--white);border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:14px;padding:0 22px;flex-shrink:0;}
+.lm{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
+.ttitle{font-size:14px;font-weight:700;}
+.ttitle small{display:block;font-size:11px;font-weight:500;color:var(--t2);}
+.tuser{margin-left:auto;font-size:12px;color:var(--t2);}
+.role-pill{display:inline-flex;align-items:center;background:var(--accent-light);color:var(--accent);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700;margin-left:8px;}
+.shell2{display:flex;flex:1;overflow:hidden;}
+.side{width:var(--sw);background:var(--white);border-right:1px solid var(--b1);overflow:auto;flex-shrink:0;padding:14px 0;}
+.side-label{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--t3);font-weight:700;padding:10px 20px 6px;}
+.nav{width:100%;border:0;background:transparent;text-align:left;padding:10px 20px;font:inherit;font-size:13px;color:var(--t2);font-weight:600;cursor:pointer;display:flex;align-items:center;gap:8px;}
+.nav:hover{background:var(--bg);}
+.nav.active{background:var(--accent-light);color:var(--accent);}
+.main{flex:1;overflow:auto;padding:28px 32px;}
+.placeholder-card{background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:28px;max-width:520px;}
+.placeholder-card h2{font-size:16px;margin-bottom:8px;}
+.placeholder-card p{font-size:13px;color:var(--t2);line-height:1.6;}
 </style>
 </head>
 <body>
 
-  <!-- ACCESS DENIED / REQUEST ACCESS -->
-  <div id="screen-denied" class="screen">
-    <div class="card">
-      <h1>Accesso non disponibile</h1>
-      <p>
-        Il tuo account non ha ancora un ruolo assegnato per Treasury Reimbursements.
-        Contatta <a href="mailto:talent@seedtag.com">People &amp; Talent</a> o
-        <a href="mailto:treasury@seedtag.com">FinOps Treasury</a>, oppure richiedi
-        l'accesso qui sotto.
-      </p>
-      <button class="btn" id="btn-open-request">Richiedi accesso</button>
-    </div>
-  </div>
+<!-- LOADING -->
+<div id="lo">
+  <div class="aologc">TR</div>
+  <div class="aopt"><div class="aopf" id="aopf"></div></div>
+  <div class="aolbl" id="aolbl">Loading Treasury…</div>
+</div>
 
-  <!-- REQUEST ACCESS MODAL -->
-  <div id="overlay-request" class="overlay">
-    <div class="card">
-      <h1>Richiedi accesso</h1>
-      <p>Un SuperAdmin dovrà approvare la richiesta prima che tu possa accedere.</p>
-      <textarea id="input-reason" rows="3" placeholder="Motivo della richiesta (opzionale)"></textarea>
-      <button class="btn" id="btn-submit-request">Invia richiesta</button>
-      <button class="btn btn-secondary" id="btn-cancel-request" style="margin-left:8px;">Annulla</button>
-    </div>
-  </div>
+<!-- ERROR -->
+<div id="es"><div class="gbox"><div class="em">⚠️</div><h2>Something went wrong</h2><p id="emsg">Could not load Treasury.</p></div></div>
 
-  <!-- AUTHENTICATED SHELL (placeholder - dashboard/config vanno qui nel prossimo step) -->
-  <div id="app-shell" class="app-shell">
-    <div class="topbar">Treasury - Reimbursements</div>
-    <div style="padding:24px;">
-      <p>Shell autenticata - dashboard richieste, config e detail view arrivano nel prossimo step.</p>
+<!-- ACCESS DENIED / REQUEST ACCESS -->
+<div id="ps"><div class="gbox">
+  <div class="em">🔒</div>
+  <h2>Accesso non disponibile</h2>
+  <p>Il tuo account non ha ancora un ruolo assegnato per Treasury Reimbursements. Contatta
+    <a href="mailto:talent@seedtag.com">People &amp; Talent</a> o
+    <a href="mailto:treasury@seedtag.com">FinOps Treasury</a>, oppure richiedi l'accesso qui sotto.</p>
+  <button class="gbtn" onclick="openRequestAccess()">Richiedi accesso</button>
+</div></div>
+
+<!-- REQUEST ACCESS MODAL -->
+<div id="overlay-request" class="overlay">
+  <div class="gbox">
+    <h2>Richiedi accesso</h2>
+    <p>Un SuperAdmin dovrà approvare la richiesta prima che tu possa accedere.</p>
+    <textarea id="input-reason" rows="3" placeholder="Motivo della richiesta (opzionale)"></textarea>
+    <div class="row">
+      <button class="gbtn" id="btn-submit-request">Invia richiesta</button>
+      <button class="gbtn ghost" id="btn-cancel-request">Annulla</button>
     </div>
   </div>
+</div>
+
+<!-- AUTHENTICATED SHELL -->
+<div id="app">
+  <div class="topbar">
+    <div class="lm">TR</div>
+    <div class="ttitle">Treasury · Reimbursements<small>People Hub 2.0</small></div>
+    <div class="tuser" id="tuser"></div>
+  </div>
+  <div class="shell2">
+    <aside class="side" id="sideMenu">
+      <div class="side-label">Anno</div>
+      <button class="nav active">2026</button>
+      <div class="side-label" id="config-label" style="display:none;">Amministrazione</div>
+      <button class="nav" id="config-nav" style="display:none;" onclick="alert('placeholder')">⚙ Config</button>
+    </aside>
+    <main class="main" id="main">
+      <div class="placeholder-card">
+        <h2>Ciao! Sei dentro.</h2>
+        <p>Bootstrap di autenticazione funzionante. Il prossimo pezzo è la vera dashboard (lista richieste mensili, creazione nuova richiesta, dettaglio con status e azioni email).</p>
+      </div>
+    </main>
+  </div>
+</div>
 
 <script>
-  // Placeholder wiring - la vera chiamata a /api/me e il postMessage bridge
-  // verso il GAS Auth Bridge / Centrale vanno agganciati come negli altri moduli.
+// ══════════════════════════════════════════════════════════
+// AUTH BOOTSTRAP - stesso identico pattern di HR Dashboard/Performance:
+// token via ?token= (GAS Auth Bridge) o localStorage, stessa freshExp().
+// ══════════════════════════════════════════════════════════
+const WK = 'https://seedtag-auth-test.peoplehub.workers.dev';
 
-  document.getElementById('btn-open-request').addEventListener('click', function () {
-    document.getElementById('overlay-request').classList.add('open');
-  });
-  document.getElementById('btn-cancel-request').addEventListener('click', function () {
+let tok = null, me = null;
+
+function freshExp(){
+  const now=new Date(), day=now.getDay();
+  if(day===0||day===6) return Date.now()+3*60*60*1000;
+  const fri=new Date(now);
+  fri.setDate(now.getDate()+((5-day+7)%7||7));
+  fri.setHours(23,59,59,999);
+  return fri.getTime();
+}
+
+function aoP(p){ const f=document.getElementById('aopf'); if(f) f.style.width=Math.max(parseInt(f.style.width)||0,p)+'%'; }
+function aoDone(){
+  aoP(100);
+  setTimeout(()=>{ const o=document.getElementById('lo'); if(o){ o.classList.add('fo'); setTimeout(()=>o.style.display='none',600); } },200);
+}
+function showErr(m){ aoDone(); document.getElementById('emsg').textContent=m; document.getElementById('es').style.display='flex'; }
+function showPriv(){ aoDone(); document.getElementById('ps').style.display='flex'; }
+
+function apiUrl(path){ return WK+path; }
+
+(async function init(){
+  aoP(20);
+  const ct=localStorage.getItem('st_token'), ce=parseInt(localStorage.getItem('st_token_exp')||'0');
+  if(ct && Date.now()<ce){ tok=ct; }
+  else{
+    const u=new URLSearchParams(window.location.search).get('token');
+    if(u){ tok=u; localStorage.setItem('st_token',u); localStorage.setItem('st_token_exp',String(freshExp())); history.replaceState({},'',window.location.pathname); }
+  }
+  if(!tok){ showErr('No authentication token found.'); return; }
+
+  aoP(50);
+  try{
+    const r = await fetch(apiUrl('/api/treasury/me'), { headers:{ Authorization:'Bearer '+tok } });
+    aoP(80);
+    if(r.status===403){ showPriv(); return; }
+    if(!r.ok){ const d=await r.json().catch(()=>({})); showErr(d.error||('Server error '+r.status)); return; }
+    const d = await r.json();
+    me = d;
+
+    if(!d.role){ showPriv(); return; }
+
+    initApp();
+    document.getElementById('app').style.display='flex';
+    aoDone();
+  }catch(e){
+    showErr('Connection error. Please try again.');
+    console.error('[boot]', e);
+  }
+})();
+
+function initApp(){
+  document.getElementById('tuser').innerHTML = me.email + ' <span class="role-pill">'+me.role+'</span>';
+  if(me.role==='SuperAdmin' || me.role==='SuperAdminExtra'){
+    document.getElementById('config-label').style.display='block';
+    document.getElementById('config-nav').style.display='flex';
+  }
+}
+
+// ── Request access (overlay, mai window.confirm/prompt - bloccati in iframe Sites) ──
+function openRequestAccess(){ document.getElementById('overlay-request').classList.add('open'); }
+document.getElementById('btn-cancel-request').addEventListener('click', ()=>{
+  document.getElementById('overlay-request').classList.remove('open');
+});
+document.getElementById('btn-submit-request').addEventListener('click', async ()=>{
+  const reason = document.getElementById('input-reason').value;
+  const btn = document.getElementById('btn-submit-request');
+  btn.disabled = true; btn.textContent = 'Invio...';
+  try{
+    await fetch(apiUrl('/api/treasury/access-requests'), {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+tok },
+      body: JSON.stringify({ reason })
+    });
     document.getElementById('overlay-request').classList.remove('open');
-  });
-  document.getElementById('btn-submit-request').addEventListener('click', async function () {
-    const reason = document.getElementById('input-reason').value;
-    // TODO: sostituire con la vera chiamata al Worker (con header auth iniettati
-    // dal Centrale), stesso pattern usato negli altri moduli People Hub 2.0.
-    console.log('request access, reason:', reason);
-    document.getElementById('overlay-request').classList.remove('open');
-  });
+    document.querySelector('#ps .gbox p').textContent = 'Richiesta inviata. Riceverai accesso non appena un SuperAdmin la approva.';
+    document.querySelector('#ps .gbtn').style.display='none';
+  }catch(e){
+    btn.disabled = false; btn.textContent = 'Invia richiesta';
+    alert('Errore di rete, riprova.'); // fuori dall'iframe Sites in caso di errore di rete puro è accettabile
+  }
+});
 </script>
 </body>
 </html>
