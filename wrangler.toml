@@ -16,8 +16,8 @@ ADJDATA_TAB = "[IMPORT] AdjData"
 PAYMENT_DAY_DEFAULT = "10"
 
 # URL dei due GAS standalone (Web App), non sensibili di per sé
-TREASURY_EMAIL_GAS_URL = "REPLACE_WITH_EMAIL_SENDER_WEBAPP_URL"
-TREASURY_IMPORT_GAS_URL = "REPLACE_WITH_IMPORT_WEBAPP_URL"
+TREASURY_EMAIL_GAS_URL = "https://script.google.com/macros/s/AKfycbyJOBRBbJNNBMbPqNtLJ_3dhT_XADqQVAN8rqZsnwFc_V2jhC3i7tFd6AeLKr5A5OWiDg/exec"
+TREASURY_IMPORT_GAS_URL = "https://script.google.com/macros/s/AKfycbwEgQzZsswK2fBjwcHsirHaSc1wNIV-hLKKyxIbVh4eSx42SjTww1by6aMq2DQYu70ZRA/exec"
 
 # Secrets - MAI in questo file, solo via `wrangler secret put <NOME>`:
 #   INTERNAL_SECRET             (condiviso con TUTTI i Worker + il Centrale)
