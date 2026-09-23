@@ -15,24 +15,19 @@ SHEET_ID = "1cjCJWSdIlhTY1-DRIJjmCM-RoEEe0OYB0iVIX3gkPfs"
 ADJDATA_TAB = "[IMPORT] AdjData"
 PAYMENT_DAY_DEFAULT = "10"
 
-# URL pubblico del Worker Centrale - usato SOLO dal cron per richiamarsi
-# attraverso il path server-to-server (vedi Pattern_SA_Token_Relay.md)
-CENTRALE_URL = "https://seedtag-auth-test.<tuo-subdomain>.workers.dev"
-
 # URL dei due GAS standalone (Web App), non sensibili di per sé
 TREASURY_EMAIL_GAS_URL = "REPLACE_WITH_EMAIL_SENDER_WEBAPP_URL"
 TREASURY_IMPORT_GAS_URL = "REPLACE_WITH_IMPORT_WEBAPP_URL"
 
 # Secrets - MAI in questo file, solo via `wrangler secret put <NOME>`:
-#   INTERNAL_SECRET          (condiviso con TUTTI i Worker + il Centrale)
-#   TREASURY_GAS_SECRET      (condiviso con Treasury_Email_Sender.gs)
-#   TREASURY_IMPORT_GAS_SECRET  (condiviso con il doGet del GAS import)
-#   TREASURY_CRON_SECRET     (validato dall'endpoint /internal/cron-diff)
+#   INTERNAL_SECRET             (condiviso con TUTTI i Worker + il Centrale)
+#   TREASURY_GAS_SECRET         (condiviso con Treasury_Email_Sender.gs)
+#   TREASURY_IMPORT_GAS_SECRET  (condiviso con Treasury_Personio_Import.gs,
+#                                usato sia per il doGet on-demand SIA per il
+#                                push del changelog dopo ogni import)
 #
-# NIENTE GOOGLE_SA_KEY qui: il token Google arriva via X-SA-Token dal
-# Centrale ad ogni richiesta (vedi Pattern_SA_Token_Relay.md).
-
-[triggers]
-# Cron nudo, nessun header/token disponibile: il worker richiama il Centrale
-# su un path server-to-server dedicato, che gli restituirà X-SA-Token.
-crons = ["15 2 * * *"]
+# NIENTE GOOGLE_SA_KEY, NIENTE [triggers] crons: il changelog viene alimentato
+# dal GAS stesso subito dopo ogni import (trigger giornaliero o on-demand),
+# che ha già i dati in memoria e li spinge al Worker via il Centrale
+# (server-to-server path, vedi Pattern_SA_Token_Relay.md). Il Worker non
+# legge mai lo Sheet per questo, riceve i dati già pronti nel body.
