@@ -150,6 +150,14 @@ export default {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
         return await listAccessRequests(env, origin);
       }
+      if (path === '/api/treasury/config/settings' && request.method === 'GET') {
+        if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
+        return await listSettings(env, origin);
+      }
+      if (path === '/api/treasury/config/settings' && request.method === 'POST') {
+        if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
+        return await updateSetting(request, env, userEmail, origin);
+      }
       const resolveAccessMatch = path.match(/^\/api\/treasury\/config\/access-requests\/(\d+)\/resolve$/);
       if (resolveAccessMatch && request.method === 'POST') {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
@@ -223,6 +231,30 @@ async function updateUserRole(request, env, accessToken, resolved, origin) {
   }
   await upsertPermissionListRow(accessToken, env.SHEET_ID, body.email, body.employee || '', body.role || '');
   return json({ ok: true }, 200, origin);
+}
+
+// ------------------------------------------------------------
+// Settings modificabili dalla webapp (Config panel) - niente redeploy per
+// cambiare valori come l'email CC di test.
+// ------------------------------------------------------------
+async function listSettings(env, origin) {
+  const { results } = await env.DB.prepare('SELECT key, value, updated_at, updated_by FROM treasury_settings').all();
+  return json({ settings: results }, 200, origin);
+}
+
+async function updateSetting(request, env, actorEmail, origin) {
+  const body = await request.json(); // { key, value }
+  if (!body.key) return json({ error: 'key required' }, 400, origin);
+  await env.DB.prepare(
+    `INSERT INTO treasury_settings (key, value, updated_by) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), updated_by = excluded.updated_by`
+  ).bind(body.key, body.value ?? '', actorEmail).run();
+  return json({ ok: true }, 200, origin);
+}
+
+async function getSetting(env, key, fallback) {
+  const row = await env.DB.prepare('SELECT value FROM treasury_settings WHERE key = ?').bind(key).first();
+  return row && row.value ? row.value : fallback;
 }
 
 // ------------------------------------------------------------
@@ -331,6 +363,8 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
   const reqRow = await env.DB.prepare('SELECT month_label FROM treasury_requests WHERE id = ?').bind(requestId).first();
   if (!reqRow) return json({ error: 'request not found' }, 404, origin);
 
+  const ccOverride = await getSetting(env, 'treasury_cc', ''); // '' = usa il default hardcoded nel GAS
+
   const placeholders = body.employeeIds.map(() => '?').join(',');
   const { results: employees } = await env.DB.prepare(
     `SELECT * FROM treasury_request_employees WHERE request_id = ? AND id IN (${placeholders})`
@@ -347,6 +381,7 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
       deadlineDate: body.deadlineDate || '',
       missingFields: body.type === 'optional_reminder' ? emp.missing_optional : emp.missing_mandatory
     });
+    if (ccOverride) params.set('cc', ccOverride);
 
     let ok = true;
     try {
