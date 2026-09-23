@@ -59,6 +59,35 @@ export async function upsertPermissionListRow(accessToken, sheetId, email, emplo
   }
 }
 
+// Append di più righe in un colpo solo - usato per il mirror del changelog
+// su Sheet. Crea l'header se il tab non esiste ancora.
+export async function appendSheetRows(accessToken, sheetId, tabName, headerRow, rows) {
+  if (!rows.length) return;
+
+  // Verifica se il tab esiste già leggendo la prima riga; se è vuoto/assente,
+  // scrive prima l'header.
+  const existing = await readRawSheet(accessToken, sheetId, tabName).catch(() => null);
+  if (!existing || existing.length === 0) {
+    const range = encodeURIComponent(tabName + '!A1');
+    await fetch('https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/' + range + '?valueInputOption=RAW', {
+      method: 'PUT',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [headerRow] })
+    });
+  }
+
+  const range = encodeURIComponent(tabName + '!A:' + String.fromCharCode(64 + headerRow.length));
+  const res = await fetch(
+    'https://sheets.googleapis.com/v4/spreadsheets/' + sheetId + '/values/' + range + ':append?valueInputOption=RAW&insertDataOption=INSERT_ROWS',
+    {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: rows })
+    }
+  );
+  if (!res.ok) throw new Error('appendSheetRows ' + res.status + ': ' + await res.text());
+}
+
 // Variante "raw" (array di array, non oggetti) - serve internamente all'upsert
 // per trovare l'indice di riga reale da aggiornare.
 async function readRawSheet(accessToken, sheetId, tabName) {
