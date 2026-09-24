@@ -103,6 +103,17 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
   <button class="gbtn" onclick="openRequestAccess()">Request access</button>
 </div></div>
 
+<div id="overlay-delete-request" class="overlay">
+  <div class="gbox">
+    <h2>Delete this month?</h2>
+    <p>It won't be shown anywhere in the app anymore, but nothing is permanently erased - a SuperAdminExtra can still see it in the history.</p>
+    <div class="row">
+      <button class="gbtn danger" id="btn-confirm-delete-request">Delete</button>
+      <button class="gbtn ghost" id="btn-cancel-delete-request">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="overlay-mismatch" class="overlay">
   <div class="gbox">
     <h2>⚠️ Status mismatch</h2>
@@ -157,6 +168,9 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
     <aside class="side" id="sideMenu">
       <button class="nav active" data-page="overview" onclick="nav('overview')">Overview</button>
       <button class="nav" data-page="fieldmap" onclick="nav('fieldmap')">Field Map</button>
+      <button class="nav" data-page="datavalidation" onclick="nav('datavalidation')">Data Validation</button>
+      <button class="nav" data-page="workflow" onclick="nav('workflow')">Workflow</button>
+      <button class="nav" data-page="templates" onclick="nav('templates')">Email Templates</button>
       <div id="year-tree"></div>
       <div class="side-label" id="config-label" style="display:none;">Administration</div>
       <button class="nav" id="config-nav" data-page="config" style="display:none;" onclick="nav('config')">⚙ Config</button>
@@ -293,6 +307,9 @@ function nav(page, param){
   if(page==='overview') renderOverview();
   if(page==='fieldmap') renderFieldMap();
   if(page==='checkall') renderCheckAll();
+  if(page==='datavalidation') renderDataValidation();
+  if(page==='workflow') renderWorkflow();
+  if(page==='templates') renderTemplates();
   if(page==='config') renderConfig('access-requests');
   if(page==='request') renderRequestDetail(param);
 }
@@ -342,6 +359,7 @@ async function renderOverview(){
       '<div style="display:flex;gap:8px;">' +
         '<button class="gbtn ghost" onclick="doRefreshPersonio()" id="refresh-btn">↻ Refresh Personio Data</button>' +
         '<button class="gbtn ghost" onclick="nav(\'checkall\')">🔍 Check Employees</button>' +
+        '<button class="gbtn ghost" onclick="nav(\'datavalidation\')">✅ Data Validation</button>' +
         '<button class="gbtn" onclick="openNewRequest()">+ New Request</button>' +
       '</div>' +
     '</div>' +
@@ -356,18 +374,23 @@ async function renderOverview(){
 
     const total = { active:0, OK:0, opt:0, mand:0 };
     rows.forEach(function(r){ total.active+=r.active; total.OK+=r.OK; total.opt+=r.opt; total.mand+=r.mand; });
+    const asOf = d.generatedAt ? new Date(d.generatedAt).toLocaleString() : '';
 
     document.getElementById('general-card').innerHTML =
-      '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:20px 22px;cursor:pointer;" onclick="toggleCountrySection()">' +
-        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+      '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:20px 22px;">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">' +
           '<span style="font-size:13px;font-weight:700;">All countries</span>' +
-          '<span id="expand-caret" style="margin-left:auto;color:var(--t2);font-size:12px;">▾ Show breakdown</span>' +
+          (asOf ? '<span style="font-size:11px;color:var(--t3);margin-left:auto;">as of '+esc(asOf)+'</span>' : '') +
         '</div>' +
-        '<div style="display:flex;gap:24px;">' +
+        '<div style="display:flex;gap:24px;margin-bottom:14px;">' +
           '<div><div style="font-size:26px;font-weight:800;">'+total.active+'</div><div style="font-size:11px;color:var(--t2);">active</div></div>' +
           '<div><div style="font-size:26px;font-weight:800;color:#1E7A45;">'+total.OK+'</div><div style="font-size:11px;color:var(--t2);">OK</div></div>' +
           '<div><div style="font-size:26px;font-weight:800;color:#B07A00;">'+total.opt+'</div><div style="font-size:11px;color:var(--t2);">missing optional</div></div>' +
           '<div><div style="font-size:26px;font-weight:800;color:#B02A2A;">'+total.mand+'</div><div style="font-size:11px;color:var(--t2);">missing mandatory</div></div>' +
+        '</div>' +
+        '<div style="display:flex;align-items:center;gap:14px;">' +
+          '<span id="expand-caret" style="color:var(--accent);font-size:12px;font-weight:700;cursor:pointer;" onclick="toggleCountrySection()">▾ Show breakdown by country</span>' +
+          '<span style="color:var(--t3);font-size:11px;cursor:pointer;" onclick="forceRefreshOverview()" id="force-refresh-overview">↻ force refresh</span>' +
         '</div>' +
       '</div>';
 
@@ -380,7 +403,16 @@ async function renderOverview(){
 function toggleCountrySection(){
   _countryExpanded = !_countryExpanded;
   document.getElementById('country-section').style.display = _countryExpanded ? 'block' : 'none';
-  document.getElementById('expand-caret').textContent = _countryExpanded ? '▴ Hide breakdown' : '▾ Show breakdown';
+  document.getElementById('expand-caret').textContent = _countryExpanded ? '▴ Hide breakdown by country' : '▾ Show breakdown by country';
+}
+
+async function forceRefreshOverview(){
+  const el = document.getElementById('force-refresh-overview');
+  el.textContent = 'refreshing…';
+  try{
+    await api('/overview?force=1');
+    renderOverview();
+  }catch(e){ toast('Error: '+e.message); }
 }
 
 function setCountryView(view){
@@ -440,23 +472,34 @@ async function renderCheckAll(){
   const main = document.getElementById('main');
   main.innerHTML =
     '<div class="page-head"><h1>Check Employees</h1><button class="gbtn ghost" onclick="nav(\'overview\')">← Back to Overview</button></div>' +
+    '<div id="checkall-freshness" style="font-size:11px;color:var(--t3);margin-bottom:12px;"></div>' +
     '<div class="panel" id="checkall-status" style="margin-bottom:16px;"><div class="empty-row">Loading…</div></div>' +
-    '<div class="panel" id="checkall-statuscountry" style="margin-bottom:16px;"></div>' +
+    '<div class="panel" id="checkall-country" style="margin-bottom:16px;"></div>' +
     '<div class="panel" id="checkall-employees"><div class="empty-row">Loading…</div></div>';
   try{
     const d = await api('/roster-check');
-    const sb = d.statusBreakdown || [], sc = d.statusCountryBreakdown || [], emps = d.employees || [];
+    const sb = d.statusBreakdown || [], cb = d.countryBreakdown || [], emps = d.employees || [];
+    const asOf = d.generatedAt ? new Date(d.generatedAt).toLocaleString() : '';
+
+    document.getElementById('checkall-freshness').innerHTML =
+      (asOf ? 'as of '+esc(asOf)+' &nbsp;·&nbsp; ' : '') +
+      '<span style="color:var(--accent);cursor:pointer;" onclick="forceRefreshCheckAll()" id="force-refresh-checkall">↻ force refresh</span>';
 
     document.getElementById('checkall-status').innerHTML =
       '<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
       sb.map(function(s){ return '<tr><td>'+statusBadge(s.status)+'</td><td style="font-weight:700;">'+s.count+'</td></tr>'; }).join('') +
       '</tbody></table>';
 
-    document.getElementById('checkall-statuscountry').innerHTML =
-      '<div style="padding:12px 16px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Status × Country (detail)</div>' +
-      '<table><thead><tr><th>Status</th><th>Country</th><th>Count</th></tr></thead><tbody>' +
-      sc.map(function(s){ return '<tr><td>'+statusBadge(s.status)+'</td><td>'+esc(s.country)+'</td><td style="font-weight:700;">'+s.count+'</td></tr>'; }).join('') +
-      '</tbody></table>';
+    document.getElementById('checkall-country').innerHTML =
+      '<div style="padding:12px 16px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">By country</div>' +
+      '<table><thead><tr><th>Country</th><th>OK</th><th>Missing Optional</th><th>Missing Mandatory</th><th>On Leave</th></tr></thead><tbody>' +
+      cb.map(function(r){
+        return '<tr><td>'+esc(r.country)+'</td>' +
+          '<td style="color:#1E7A45;font-weight:700;">'+r.OK+'</td>' +
+          '<td style="color:#B07A00;">'+r.OK_MISSING_OPTIONAL+'</td>' +
+          '<td style="color:#B02A2A;font-weight:700;">'+r.MISSING_MANDATORY+'</td>' +
+          '<td style="color:var(--t3);">'+r.ON_LEAVE+'</td></tr>';
+      }).join('') + '</tbody></table>';
 
     document.getElementById('checkall-employees').innerHTML =
       '<table><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing Mandatory</th><th>Missing Optional</th></tr></thead><tbody>' +
@@ -469,6 +512,15 @@ async function renderCheckAll(){
     document.getElementById('checkall-status').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>';
     document.getElementById('checkall-employees').innerHTML = '';
   }
+}
+
+async function forceRefreshCheckAll(){
+  const el = document.getElementById('force-refresh-checkall');
+  el.textContent = 'refreshing…';
+  try{
+    await api('/roster-check?force=1');
+    renderCheckAll();
+  }catch(e){ toast('Error: '+e.message); }
 }
 
 // ── Sidebar: Year > Month tree, built from real requests ────────
@@ -507,6 +559,52 @@ async function renderFieldMap(){
         return '<tr><td>'+esc(c)+'</td><td>'+esc(req[c].mandatory.join(', '))+'</td><td>'+esc(req[c].optional.join(', ')||'—')+'</td></tr>';
       }).join('') + '</tbody></table>';
   }catch(e){ document.getElementById('fieldmap-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+}
+
+// ── Data Validation - vuota finché non arrivano le regole vere ──────
+function renderDataValidation(){
+  document.getElementById('main').innerHTML =
+    '<div class="page-head"><h1>Data Validation</h1></div>' +
+    '<div class="panel"><div class="empty-row">No validation rules configured yet. Once you share the format rules for each field (length, pattern, allowed characters, etc.), they will show up here per country/field.</div></div>';
+}
+
+// ── Workflow - bozza, da correggere ──────────────────────────────────
+function renderWorkflow(){
+  document.getElementById('main').innerHTML =
+    '<div class="page-head"><h1>Workflow</h1></div>' +
+    '<div class="panel" style="padding:24px;">' +
+      '<ol style="padding-left:20px;line-height:2;font-size:13.5px;">' +
+        '<li><strong>Create the month</strong> - "+ New Request" in Overview. The payment date defaults to the 10th of the month (or next month, if today is past the 10th). The two Personio deadline dates are the last day employees can still update their bank details in Personio before you close the month.</li>' +
+        '<li><strong>Add the employees</strong> - open the month, "+ Add Employees", paste the list (one email per line, or "Name, email"). Each person gets matched against Personio automatically and gets a status.</li>' +
+        '<li><strong>Review the statuses</strong> - <span style="color:#1E7A45;font-weight:700;">OK</span> means bank details are complete and won\'t need any action. <span style="color:#B07A00;font-weight:700;">OK - Missing optional</span> means the mandatory fields are fine, some optional ones are empty. <span style="color:#B02A2A;font-weight:700;">Missing Mandatory</span> means the reimbursement can\'t be processed until they fix it in Personio.</li>' +
+        '<li><strong>Send the emails</strong> - either pick specific people and a template manually, or use "Send Auto" to send everyone the template that matches their own status in one click.</li>' +
+        '<li><strong>Follow up</strong> - as people update Personio, the next daily refresh (or "Refresh Personio Data" if you need it sooner) updates their status automatically. Re-check the month and re-send to whoever is still missing mandatory fields.</li>' +
+        '<li><strong>Close the month</strong> - once everyone is sorted, the month stays in the sidebar as a permanent record. If a month was created by mistake, an Admin can delete it (it moves to the SuperAdminExtra-only history, never fully erased).</li>' +
+      '</ol>' +
+      '<p style="margin-top:14px;font-size:12px;color:var(--t2);">This is a first draft - tell me what to change and I\'ll fix the wording.</p>' +
+    '</div>';
+}
+
+// ── Email Templates - sola lettura per ora ───────────────────────────
+function renderTemplates(){
+  const templates = [
+    { key:'missing_mandatory', label:'Missing Mandatory', subject:'Action Required: Update Your Bank Details for {Month} Reimbursement',
+      body:'Hey {Name},\n\nWe\'re reaching out because, while reviewing the {Month} employee expense reimbursements, we found that your bank information in Personio is still missing one or more mandatory fields.\n\nTo ensure your reimbursement can be processed correctly, please update your missing bank information in Personio no later than {Deadline}.\n\nMissing information: {MissingFields}\n\nBest,\nFinOps - Treasury Team' },
+    { key:'optional_reminder', label:'Optional Reminder', subject:'Please Complete Your Bank Details for {Month} Reimbursement',
+      body:'Hey {Name},\n\nWhile reviewing the {Month} employee expense reimbursements, we noticed your bank information in Personio has all mandatory fields complete, but a few optional fields are still missing.\n\nOptional fields you could complete: {MissingFields}\n\nThese are not required - no action needed if you\'d rather not.\n\nBest,\nFinOps - Treasury Team' },
+    { key:'confirm', label:'Confirm', subject:'Confirmation: Your Bank Details for {Month} Reimbursement',
+      body:'Hey {Name},\n\nThis is a quick confirmation regarding the {Month} employee expense reimbursements: your bank details currently on file in Personio are complete, and these are the details that will be used to process your reimbursement.\n\nNo action is needed on your side.\n\nBest,\nFinOps - Treasury Team' }
+  ];
+  document.getElementById('main').innerHTML =
+    '<div class="page-head"><h1>Email Templates</h1></div>' +
+    '<p style="font-size:12.5px;color:var(--t2);margin-bottom:16px;">Read-only for now - editing these from the app would mean moving the template text into D1 instead of the GAS sender. Tell me if you want that built.</p>' +
+    templates.map(function(t){
+      return '<div class="panel" style="margin-bottom:16px;padding:18px 20px;">' +
+        '<div style="font-size:13px;font-weight:700;margin-bottom:6px;">'+t.label+'</div>' +
+        '<div style="font-size:11.5px;color:var(--t3);margin-bottom:10px;">Subject: '+esc(t.subject)+'</div>' +
+        '<pre style="white-space:pre-wrap;font-family:inherit;font-size:12.5px;color:var(--t2);line-height:1.6;">'+esc(t.body)+'</pre>' +
+      '</div>';
+    }).join('');
 }
 
 function openNewRequest(){
@@ -560,6 +658,7 @@ async function renderRequestDetail(id){
         '<div class="row" style="display:flex;gap:8px;">' +
           '<button class="gbtn ghost" onclick="nav(\'overview\')">← Back</button>' +
           '<button class="gbtn" onclick="openAddEmployees()">+ Add Employees</button>' +
+          '<button class="gbtn danger" onclick="openDeleteRequest()">🗑 Delete</button>' +
         '</div>' +
       '</div>' +
       '<p style="font-size:12.5px;color:var(--t2);margin-bottom:16px;">' +
@@ -682,6 +781,22 @@ async function sendAutoEmail(){
 }
 
 // ── Add employees (paste) ───────────────────────────────────
+function openDeleteRequest(){
+  document.getElementById('overlay-delete-request').classList.add('open');
+}
+document.getElementById('btn-cancel-delete-request').addEventListener('click', function(){
+  document.getElementById('overlay-delete-request').classList.remove('open');
+});
+document.getElementById('btn-confirm-delete-request').addEventListener('click', async function(){
+  try{
+    await api('/requests/'+_currentRequestId, { method:'DELETE' });
+    document.getElementById('overlay-delete-request').classList.remove('open');
+    toast('Request deleted');
+    buildYearTree();
+    nav('overview');
+  }catch(e){ toast('Error: '+e.message); }
+});
+
 function openAddEmployees(){
   document.getElementById('ae-textarea').value = '';
   document.getElementById('overlay-addemployees').classList.add('open');
@@ -740,6 +855,7 @@ let _configTab = 'access-requests';
 
 function renderConfig(tab){
   _configTab = tab;
+  const isSuperAdminExtra = me && me.role === 'SuperAdminExtra';
   const main = document.getElementById('main');
   main.innerHTML =
     '<div class="page-head"><h1>Configuration</h1></div>' +
@@ -747,11 +863,34 @@ function renderConfig(tab){
       '<button class="subtab ' + (tab==='access-requests'?'active':'') + '" onclick="renderConfig(\'access-requests\')">Access Requests</button>' +
       '<button class="subtab ' + (tab==='users'?'active':'') + '" onclick="renderConfig(\'users\')">Users &amp; Roles</button>' +
       '<button class="subtab ' + (tab==='settings'?'active':'') + '" onclick="renderConfig(\'settings\')">Settings</button>' +
+      (isSuperAdminExtra ? '<button class="subtab ' + (tab==='history'?'active':'') + '" onclick="renderConfig(\'history\')">History</button>' : '') +
     '</div>' +
     '<div class="panel" id="config-panel"><div class="empty-row">Loading…</div></div>';
   if(tab==='access-requests') loadAccessRequests();
   if(tab==='users') loadUsers();
   if(tab==='settings') loadSettings();
+  if(tab==='history') loadHistory();
+}
+
+async function loadHistory(){
+  const panel = document.getElementById('config-panel');
+  try{
+    const [logRes, delRes] = await Promise.all([ api('/config/audit-log'), api('/config/deleted-requests') ]);
+    const entries = logRes.entries || [], deleted = delRes.requests || [];
+    panel.innerHTML =
+      '<div style="padding:12px 16px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Deleted months</div>' +
+      (deleted.length
+        ? '<table><thead><tr><th>Month</th><th>Deleted by</th><th>Deleted at</th></tr></thead><tbody>' +
+          deleted.map(function(r){ return '<tr><td>'+esc(r.month_label)+'</td><td>'+esc(r.deleted_by)+'</td><td>'+esc(r.deleted_at)+'</td></tr>'; }).join('') +
+          '</tbody></table>'
+        : '<div class="empty-row">None.</div>') +
+      '<div style="padding:12px 16px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;border-top:1px solid var(--b1);margin-top:8px;">Action log (last 200)</div>' +
+      '<table><thead><tr><th>When</th><th>Who</th><th>Action</th><th>Detail</th></tr></thead><tbody>' +
+      entries.map(function(e){
+        return '<tr><td style="white-space:nowrap;">'+esc(e.created_at)+'</td><td>'+esc(e.actor_email)+'</td><td>'+esc(e.action)+'</td>' +
+          '<td style="font-size:11px;color:var(--t2);">'+esc(e.detail)+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){ panel.innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
 }
 
 async function loadAccessRequests(){
