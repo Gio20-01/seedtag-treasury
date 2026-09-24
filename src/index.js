@@ -298,7 +298,7 @@ async function addEmployees(request, env, accessToken, requestId, origin) {
   }));
 
   const [bankRows, adjRows] = await Promise.all([
-    readSheetTab(accessToken, env.SHEET_ID, 'Personio Bank Data'),
+    readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
     readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
   ]);
   const evaluated = matchAndEvaluate(bankRows, adjRows, inputRows);
@@ -326,7 +326,7 @@ async function resolveAmbiguous(request, env, accessToken, requestId, employeeRo
   if (!chosenEmail) return json({ error: 'chosenEmail required' }, 400, origin);
 
   const [bankRows, adjRows] = await Promise.all([
-    readSheetTab(accessToken, env.SHEET_ID, 'Personio Bank Data'),
+    readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
     readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
   ]);
   const [evaluated] = matchAndEvaluate(bankRows, adjRows, [{ name: '', email: chosenEmail }]);
