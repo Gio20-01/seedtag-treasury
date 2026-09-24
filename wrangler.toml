@@ -10,6 +10,10 @@ binding = "DB"
 database_name = "seedtag-treasury-db"
 database_id = "b5c0643b-346d-499c-bcc7-3d52e22cb294"
 
+[[kv_namespaces]]
+binding = "CACHE"
+id = "a26a0607f1844a428d25d9df2a9c9530"
+
 [vars]
 SHEET_ID = "1cjCJWSdIlhTY1-DRIJjmCM-RoEEe0OYB0iVIX3gkPfs"
 OPERATIONAL_SHEET_ID = "1PGQSebWGGmj4h6KNTeQCDVSI6p448oKizmtjF5zxUpk"
@@ -19,15 +23,21 @@ PAYMENT_DAY_DEFAULT = "10"
 TREASURY_EMAIL_GAS_URL = "https://script.google.com/macros/s/AKfycbyJOBRBbJNNBMbPqNtLJ_3dhT_XADqQVAN8rqZsnwFc_V2jhC3i7tFd6AeLKr5A5OWiDg/exec"
 TREASURY_IMPORT_GAS_URL = "https://script.google.com/macros/s/AKfycbwEgQzZsswK2fBjwcHsirHaSc1wNIV-hLKKyxIbVh4eSx42SjTww1by6aMq2DQYu70ZRA/exec"
 
+# Cron di sicurezza alle 3 AM - il GAS import gira 1-2 AM e già aggiorna la
+# cache lui stesso (via ingest-changelog); questo è solo un fallback
+# indipendente nel caso il GAS non giri un giorno per qualche motivo.
+[triggers]
+crons = ["0 3 * * *"]
+
 # Secrets - MAI in questo file, solo via `wrangler secret put <NOME>`:
 #   INTERNAL_SECRET             (condiviso con TUTTI i Worker + il Centrale)
 #   TREASURY_GAS_SECRET         (condiviso con Treasury_Email_Sender.gs)
 #   TREASURY_IMPORT_GAS_SECRET  (condiviso con Treasury_Personio_Import.gs,
 #                                usato sia per il doGet on-demand SIA per il
 #                                push del changelog dopo ogni import)
-#
-# NIENTE GOOGLE_SA_KEY, NIENTE [triggers] crons: il changelog viene alimentato
-# dal GAS stesso subito dopo ogni import (trigger giornaliero o on-demand),
-# che ha già i dati in memoria e li spinge al Worker via il Centrale
-# (server-to-server path, vedi Pattern_SA_Token_Relay.md). Il Worker non
-# legge mai lo Sheet per questo, riceve i dati già pronti nel body.
+#   GOOGLE_SA_KEY               (Service Account JSON - ECCEZIONE deliberata,
+#                                "Pattern B" in Pattern_SA_Token_Relay.md:
+#                                usato SOLO dal cron delle 3 AM come rete di
+#                                sicurezza indipendente dal GAS. Tutte le
+#                                richieste utente normali continuano a usare
+#                                X-SA-Token dal Centrale come sempre)
