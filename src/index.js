@@ -101,6 +101,7 @@ export default {
         if (body.secret !== env.TREASURY_IMPORT_GAS_SECRET) return json({ error: 'unauthorized' }, 401, origin);
         const s2sToken = request.headers.get('X-SA-Token'); // il Centrale lo passa anche nelle chiamate server-to-server
         await runDailyChangelogDiff(env, body.bankRows || [], body.adjRows || [], s2sToken);
+        await refreshCacheFrom(env, body.bankRows || [], body.adjRows || []);
         return json({ ok: true }, 200, origin);
       }
 
@@ -109,10 +110,10 @@ export default {
       }
 
       if (path === '/api/treasury/overview' && request.method === 'GET') {
-        return await getOverviewStats(env, accessToken, origin);
+        return await getOverviewStats(env, accessToken, origin, url.searchParams.get('force') === '1');
       }
       if (path === '/api/treasury/roster-check' && request.method === 'GET') {
-        return await getRosterCheck(env, accessToken, origin);
+        return await getRosterCheck(env, accessToken, origin, url.searchParams.get('force') === '1');
       }
       if (path === '/api/treasury/field-map' && request.method === 'GET') {
         const { REQUIREMENTS } = await import('./matching.js');
@@ -128,9 +129,13 @@ export default {
       if (detailMatch && request.method === 'GET') {
         return await getRequestDetail(env, Number(detailMatch[1]), origin);
       }
+      if (detailMatch && request.method === 'DELETE') {
+        if (!requireRole(resolved, 'Admin')) return json({ error: 'forbidden' }, 403, origin);
+        return await deleteRequest(env, Number(detailMatch[1]), userEmail, origin);
+      }
       const employeesMatch = path.match(/^\/api\/treasury\/requests\/(\d+)\/employees$/);
       if (employeesMatch && request.method === 'POST') {
-        return await addEmployees(request, env, accessToken, Number(employeesMatch[1]), origin);
+        return await addEmployees(request, env, accessToken, Number(employeesMatch[1]), userEmail, origin);
       }
       const resolveAmbigMatch = path.match(/^\/api\/treasury\/requests\/(\d+)\/employees\/(\d+)\/resolve-ambiguous$/);
       if (resolveAmbigMatch && request.method === 'POST') {
@@ -138,7 +143,7 @@ export default {
       }
       const emailMatch = path.match(/^\/api\/treasury\/requests\/(\d+)\/email$/);
       if (emailMatch && request.method === 'POST') {
-        return await sendEmails(request, env, Number(emailMatch[1]), userEmail, origin);
+        return await sendEmails(request, env, accessToken, Number(emailMatch[1]), userEmail, origin);
       }
 
       // On-demand refresh dei dati Personio (oltre al trigger giornaliero GAS)
@@ -159,7 +164,7 @@ export default {
       }
       if (path === '/api/treasury/config/users' && request.method === 'POST') {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
-        return await updateUserRole(request, env, accessToken, resolved, origin);
+        return await updateUserRole(request, env, accessToken, resolved, userEmail, origin);
       }
       if (path === '/api/treasury/config/access-requests' && request.method === 'GET') {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
@@ -178,13 +183,75 @@ export default {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
         return await resolveAccessRequest(request, env, accessToken, Number(resolveAccessMatch[1]), userEmail, origin);
       }
+      if (path === '/api/treasury/config/audit-log' && request.method === 'GET') {
+        if (resolved.role !== 'SuperAdminExtra') return json({ error: 'forbidden' }, 403, origin);
+        const { results } = await env.DB.prepare(
+          'SELECT * FROM treasury_audit_log ORDER BY created_at DESC LIMIT 200'
+        ).all();
+        return json({ entries: results }, 200, origin);
+      }
+      if (path === '/api/treasury/config/deleted-requests' && request.method === 'GET') {
+        if (resolved.role !== 'SuperAdminExtra') return json({ error: 'forbidden' }, 403, origin);
+        const { results } = await env.DB.prepare(
+          "SELECT * FROM treasury_requests WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC"
+        ).all();
+        return json({ requests: results }, 200, origin);
+      }
 
       return json({ error: 'not found' }, 404, origin);
     } catch (err) {
       return json({ error: err.message }, 500, origin);
     }
+  },
+
+  // Rete di sicurezza indipendente dal GAS: se per qualche motivo il GAS non
+  // gira un giorno (trigger fallito, errore Personio, ecc.), la cache non
+  // resta comunque ferma per sempre. Pattern B (vedi Pattern_SA_Token_Relay.md):
+  // GOOGLE_SA_KEY dedicato, usato SOLO qui - tutte le richieste utente normali
+  // continuano a usare X-SA-Token dal Centrale come sempre.
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const accessToken = await getCronAccessToken(env);
+        const [bankRows, adjRows] = await Promise.all([
+          readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
+          readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
+        ]);
+        await refreshCacheFrom(env, bankRows, adjRows);
+      } catch (e) { console.error('[scheduled cache refresh]', e.message); }
+    })());
   }
 };
+
+async function getCronAccessToken(env) {
+  const sa = JSON.parse(env.GOOGLE_SA_KEY);
+  const now = Math.floor(Date.now() / 1000);
+  const b64url = (obj) => btoa(JSON.stringify(obj)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const unsigned = b64url({ alg: 'RS256', typ: 'JWT' }) + '.' + b64url({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/spreadsheets',
+    aud: sa.token_uri || 'https://oauth2.googleapis.com/token',
+    iat: now,
+    exp: now + 3600
+  });
+  const pemBody = sa.private_key.replace('-----BEGIN PRIVATE KEY-----', '').replace('-----END PRIVATE KEY-----', '').replace(/\n/g, '');
+  const cryptoKey = await crypto.subtle.importKey(
+    'pkcs8',
+    Uint8Array.from(atob(pemBody), (c) => c.charCodeAt(0)),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false, ['sign']
+  );
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', cryptoKey, new TextEncoder().encode(unsigned));
+  const sig64 = btoa(String.fromCharCode(...new Uint8Array(signature))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=' + unsigned + '.' + sig64
+  });
+  const data = await res.json();
+  if (!data.access_token) throw new Error(JSON.stringify(data));
+  return data.access_token;
+}
 
 // ------------------------------------------------------------
 // Access requests (no-role users)
@@ -222,6 +289,7 @@ async function resolveAccessRequest(request, env, accessToken, id, actorEmail, o
   if (decision === 'approved' && body.role) {
     await upsertPermissionListRow(accessToken, env.SHEET_ID, reqRow.email, body.employee || reqRow.name || '', body.role);
   }
+  await logAudit(env, actorEmail, 'access_request_resolved', { email: reqRow.email, decision, role: body.role || null });
 
   return json({ ok: true }, 200, origin);
 }
@@ -235,7 +303,7 @@ async function listUsers(resolved, origin) {
   return json({ users: visible }, 200, origin);
 }
 
-async function updateUserRole(request, env, accessToken, resolved, origin) {
+async function updateUserRole(request, env, accessToken, resolved, actorEmail, origin) {
   const body = await request.json(); // { email, employee, role } - role='' per rimuovere
   if (body.role === 'SuperAdminExtra' && resolved.role !== 'SuperAdminExtra') {
     return json({ error: 'cannot assign SuperAdminExtra' }, 403, origin);
@@ -245,6 +313,7 @@ async function updateUserRole(request, env, accessToken, resolved, origin) {
     return json({ error: 'cannot modify SuperAdminExtra' }, 403, origin);
   }
   await upsertPermissionListRow(accessToken, env.SHEET_ID, body.email, body.employee || '', body.role || '');
+  await logAudit(env, actorEmail, 'user_role_changed', { email: body.email, role: body.role || '(removed)' });
   return json({ ok: true }, 200, origin);
 }
 
@@ -264,6 +333,7 @@ async function updateSetting(request, env, actorEmail, origin) {
     `INSERT INTO treasury_settings (key, value, updated_by) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = datetime('now'), updated_by = excluded.updated_by`
   ).bind(body.key, body.value ?? '', actorEmail).run();
+  await logAudit(env, actorEmail, 'setting_changed', { key: body.key });
   return json({ ok: true }, 200, origin);
 }
 
@@ -272,34 +342,75 @@ async function getSetting(env, key, fallback) {
   return row && row.value ? row.value : fallback;
 }
 
-async function getOverviewStats(env, accessToken, origin) {
+const CACHE_KEY_OVERVIEW = 'treasury:cache:overview:v1';
+const CACHE_KEY_ROSTER = 'treasury:cache:roster:v1';
+
+async function getOverviewStats(env, accessToken, origin, force) {
+  if (!force && env.CACHE) {
+    try {
+      const cached = await env.CACHE.get(CACHE_KEY_OVERVIEW, { type: 'json' });
+      if (cached) return json(cached, 200, origin);
+    } catch (e) { /* fallback a lettura live sotto */ }
+  }
   const [bankRows, adjRows] = await Promise.all([
     readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
     readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
   ]);
   const { evaluateRoster } = await import('./matching.js');
   const byCountry = evaluateRoster(bankRows, adjRows);
-  return json({ byCountry }, 200, origin);
+  const payload = { byCountry, generatedAt: new Date().toISOString() };
+  if (env.CACHE) { try { await env.CACHE.put(CACHE_KEY_OVERVIEW, JSON.stringify(payload)); } catch (e) {} }
+  return json(payload, 200, origin);
 }
 
 // "Check Employees" globale (Overview) - TUTTI gli employee del roster,
 // nessun paste. Mai valori bancari, solo nomi dei campi mancanti.
-async function getRosterCheck(env, accessToken, origin) {
+async function getRosterCheck(env, accessToken, origin, force) {
+  if (!force && env.CACHE) {
+    try {
+      const cached = await env.CACHE.get(CACHE_KEY_ROSTER, { type: 'json' });
+      if (cached) return json(cached, 200, origin);
+    } catch (e) {}
+  }
   const [bankRows, adjRows] = await Promise.all([
     readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
     readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
   ]);
   const { evaluateRosterDetailed } = await import('./matching.js');
   const result = evaluateRosterDetailed(bankRows, adjRows);
-  return json(result, 200, origin);
+  const payload = { ...result, generatedAt: new Date().toISOString() };
+  if (env.CACHE) { try { await env.CACHE.put(CACHE_KEY_ROSTER, JSON.stringify(payload)); } catch (e) {} }
+  return json(payload, 200, origin);
+}
+
+// Ricalcola e salva entrambe le cache da dati già in mano (bankRows/adjRows) -
+// usata sia dall'ingest-changelog (dati appena spinti dal GAS) sia dal cron
+// delle 3am come rete di sicurezza indipendente.
+async function refreshCacheFrom(env, bankRows, adjRows) {
+  const { evaluateRoster, evaluateRosterDetailed } = await import('./matching.js');
+  const now = new Date().toISOString();
+  const overviewPayload = { byCountry: evaluateRoster(bankRows, adjRows), generatedAt: now };
+  const rosterPayload = { ...evaluateRosterDetailed(bankRows, adjRows), generatedAt: now };
+  if (env.CACHE) {
+    await env.CACHE.put(CACHE_KEY_OVERVIEW, JSON.stringify(overviewPayload));
+    await env.CACHE.put(CACHE_KEY_ROSTER, JSON.stringify(rosterPayload));
+  }
 }
 
 // ------------------------------------------------------------
 // Monthly requests
 // ------------------------------------------------------------
+async function logAudit(env, actorEmail, action, detail) {
+  try {
+    await env.DB.prepare(
+      'INSERT INTO treasury_audit_log (actor_email, action, detail) VALUES (?, ?, ?)'
+    ).bind(actorEmail, action, JSON.stringify(detail || {})).run();
+  } catch (e) { /* non bloccante - l'audit non deve mai rompere l'azione vera */ }
+}
+
 async function listRequests(env, origin) {
   const { results } = await env.DB.prepare(
-    'SELECT id, month_label, payment_date, status, created_at FROM treasury_requests ORDER BY payment_date DESC'
+    "SELECT id, month_label, payment_date, status, created_at FROM treasury_requests WHERE deleted_at IS NULL ORDER BY payment_date DESC"
   ).all();
   return json({ requests: results }, 200, origin);
 }
@@ -310,7 +421,18 @@ async function createRequest(request, env, userEmail, origin) {
     `INSERT INTO treasury_requests (month_label, payment_date, personio_deadline_1, personio_deadline_2, created_by)
      VALUES (?, ?, ?, ?, ?)`
   ).bind(body.month_label, body.payment_date, body.personio_deadline_1 || null, body.personio_deadline_2 || null, userEmail).run();
+  await logAudit(env, userEmail, 'request_created', { id: result.meta.last_row_id, month_label: body.month_label });
   return json({ ok: true, id: result.meta.last_row_id }, 200, origin);
+}
+
+async function deleteRequest(env, id, userEmail, origin) {
+  const req = await env.DB.prepare('SELECT month_label FROM treasury_requests WHERE id = ?').bind(id).first();
+  if (!req) return json({ error: 'not found' }, 404, origin);
+  await env.DB.prepare(
+    "UPDATE treasury_requests SET deleted_at = datetime('now'), deleted_by = ? WHERE id = ?"
+  ).bind(userEmail, id).run();
+  await logAudit(env, userEmail, 'request_deleted', { id, month_label: req.month_label });
+  return json({ ok: true }, 200, origin);
 }
 
 async function getRequestDetail(env, id, origin) {
@@ -342,7 +464,7 @@ async function quickCheck(request, env, accessToken, origin) {
   return json({ employees: evaluated }, 200, origin);
 }
 
-async function addEmployees(request, env, accessToken, requestId, origin) {
+async function addEmployees(request, env, accessToken, requestId, actorEmail, origin) {
   const body = await request.json();
   const inputRows = (body.rows || []).map((r) => ({
     name: r.name || '',
@@ -365,6 +487,7 @@ async function addEmployees(request, env, accessToken, requestId, origin) {
     e.country, e.status, e.missing_mandatory, e.missing_optional, e.ambiguous_candidates
   ));
   await env.DB.batch(batch);
+  await logAudit(env, actorEmail, 'employees_added', { requestId, count: evaluated.length });
 
   return json({ ok: true, count: evaluated.length }, 200, origin);
 }
@@ -419,13 +542,21 @@ function autoEmailTypeFor(status) {
   return null;
 }
 
-async function sendEmails(request, env, requestId, actorEmail, origin) {
+async function sendEmails(request, env, accessToken, requestId, actorEmail, origin) {
   const body = await request.json();
   const reqRow = await env.DB.prepare('SELECT month_label FROM treasury_requests WHERE id = ?').bind(requestId).first();
   if (!reqRow) return json({ error: 'request not found' }, 404, origin);
 
   const ccOverride = await getSetting(env, 'treasury_cc', ''); // '' = usa il default hardcoded nel GAS
   const isAuto = body.type === 'auto';
+
+  // Nickname per il saluto ("Hey <Nickname>") - da User_Management, non da AdjData
+  const umRows = await readSheetTab(accessToken, env.SHEET_ID, 'User_Management').catch(() => []);
+  const nicknameByEmail = {};
+  umRows.forEach((r) => {
+    const e = String(r.Email || '').trim().toLowerCase();
+    if (e) nicknameByEmail[e] = r.Nickname || r['First name'] || '';
+  });
 
   const placeholders = body.employeeIds.map(() => '?').join(',');
   const { results: employees } = await env.DB.prepare(
@@ -440,11 +571,14 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
       continue;
     }
 
+    const empEmailLower = String(emp.matched_email || emp.input_email || '').trim().toLowerCase();
+    const toName = nicknameByEmail[empEmailLower] || emp.input_name || '';
+
     const params = new URLSearchParams({
       secret: env.TREASURY_GAS_SECRET,
       type: effectiveType,
       toEmail: emp.matched_email || emp.input_email,
-      toName: emp.input_name || '',
+      toName: toName,
       monthLabel: reqRow.month_label,
       deadlineDate: body.deadlineDate || '',
       missingFields: effectiveType === 'optional_reminder' ? emp.missing_optional : emp.missing_mandatory
@@ -465,6 +599,7 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
     outcomes.push({ email: emp.matched_email || emp.input_email, ok });
   }
 
+  await logAudit(env, actorEmail, 'emails_sent', { requestId, type: body.type, count: employees.length });
   return json({ ok: true, outcomes }, 200, origin);
 }
 
