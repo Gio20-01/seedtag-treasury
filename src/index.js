@@ -36,7 +36,7 @@ async function resolveRole(accessToken, sheetId, email) {
   const baseMap = {};
   umRows.forEach((r) => {
     const e = String(r.Email || '').toLowerCase().trim();
-    if (e) baseMap[e] = { email: e, employee: r['First name'] || '', role: '' };
+    if (e) baseMap[e] = { email: e, employee: r['First name'] || '', role: (r.Role || '').trim() };
   });
 
   const overrideMap = {};
