@@ -87,6 +87,69 @@ export function isEmpty(v) {
 // a una richiesta mensile - usato dalla dashboard Overview per il conteggio
 // aggregato per paese. Nessun input esterno da matchare: ogni riga AdjData
 // è già la fonte di verità sull'email.
+// Come evaluateRoster, ma ritorna anche la lista completa employee-per-employee
+// (solo nomi dei campi mancanti, MAI i valori bancari) + il breakdown per
+// status globale, per la pagina "Check Employees" in Overview.
+export function evaluateRosterDetailed(bankRows, adjRows) {
+  const bankByEmail = {};
+  bankRows.forEach((r) => {
+    const e = String(r.Email || '').trim().toLowerCase();
+    if (e) bankByEmail[e] = r;
+  });
+
+  const employees = [];
+  const statusCounts = {};
+  const statusCountryCounts = {};
+
+  adjRows.forEach((adj) => {
+    const email = String(adj.Email || '').trim().toLowerCase();
+    if (!email) return;
+    const rawStatus = String(adj.Status || '').trim().toLowerCase();
+    const name = [adj['First name'], adj['Last name']].filter(Boolean).join(' ');
+
+    let status, country, missingMand = [], missingOpt = [];
+    if (rawStatus === 'leave') {
+      country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
+      status = 'ON_LEAVE';
+    } else if (rawStatus !== 'active') {
+      country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
+      status = 'INACTIVE';
+    } else {
+      const resolved = resolveCountry(adj.Country);
+      if (!resolved || !REQUIREMENTS[resolved]) {
+        country = adj.Country || 'Unmapped';
+        status = 'COUNTRY_NOT_MAPPED';
+      } else {
+        country = resolved;
+        const bankRec = bankByEmail[email] || {};
+        const req = REQUIREMENTS[country];
+        missingMand = req.mandatory.filter((f) => isEmpty(bankRec[f]));
+        missingOpt = req.optional.filter((f) => isEmpty(bankRec[f]));
+        status = missingMand.length ? 'MISSING_MANDATORY' : (missingOpt.length ? 'OK_MISSING_OPTIONAL' : 'OK');
+      }
+    }
+
+    employees.push({
+      name, email: adj.Email || email, country, status,
+      missing_mandatory: missingMand.join(', '), missing_optional: missingOpt.join(', ')
+    });
+
+    statusCounts[status] = (statusCounts[status] || 0) + 1;
+    const key = status + '||' + country;
+    statusCountryCounts[key] = (statusCountryCounts[key] || 0) + 1;
+  });
+
+  const statusBreakdown = Object.keys(statusCounts).sort().map((s) => ({ status: s, count: statusCounts[s] }));
+  const statusCountryBreakdown = Object.keys(statusCountryCounts).sort().map((k) => {
+    const idx = k.lastIndexOf('||');
+    return { status: k.slice(0, idx), country: k.slice(idx + 2), count: statusCountryCounts[k] };
+  });
+
+  employees.sort((a, b) => a.country.localeCompare(b.country) || a.name.localeCompare(b.name));
+
+  return { employees, statusBreakdown, statusCountryBreakdown };
+}
+
 export function evaluateRoster(bankRows, adjRows) {
   const bankByEmail = {};
   bankRows.forEach((r) => {
