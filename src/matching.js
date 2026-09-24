@@ -99,21 +99,21 @@ export function evaluateRosterDetailed(bankRows, adjRows) {
 
   const employees = [];
   const statusCounts = {};
-  const statusCountryCounts = {};
+  const byCountry = {}; // country -> { country, OK, OK_MISSING_OPTIONAL, MISSING_MANDATORY, ON_LEAVE, COUNTRY_NOT_MAPPED }
 
   adjRows.forEach((adj) => {
     const email = String(adj.Email || '').trim().toLowerCase();
     if (!email) return;
     const rawStatus = String(adj.Status || '').trim().toLowerCase();
-    const name = [adj['First name'], adj['Last name']].filter(Boolean).join(' ');
+    // Nome dalla colonna "Employee" (come in AdjData), fallback First+Last name
+    const name = adj.Employee || [adj['First name'], adj['Last name']].filter(Boolean).join(' ');
 
     let status, country, missingMand = [], missingOpt = [];
     if (rawStatus === 'leave') {
       country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
       status = 'ON_LEAVE';
     } else if (rawStatus !== 'active') {
-      country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
-      status = 'INACTIVE';
+      return; // INACTIVE - non ci interessa qui, escluso del tutto
     } else {
       const resolved = resolveCountry(adj.Country);
       if (!resolved || !REQUIREMENTS[resolved]) {
@@ -135,19 +135,18 @@ export function evaluateRosterDetailed(bankRows, adjRows) {
     });
 
     statusCounts[status] = (statusCounts[status] || 0) + 1;
-    const key = status + '||' + country;
-    statusCountryCounts[key] = (statusCountryCounts[key] || 0) + 1;
+    if (!byCountry[country]) {
+      byCountry[country] = { country, OK: 0, OK_MISSING_OPTIONAL: 0, MISSING_MANDATORY: 0, ON_LEAVE: 0, COUNTRY_NOT_MAPPED: 0 };
+    }
+    byCountry[country][status] = (byCountry[country][status] || 0) + 1;
   });
 
   const statusBreakdown = Object.keys(statusCounts).sort().map((s) => ({ status: s, count: statusCounts[s] }));
-  const statusCountryBreakdown = Object.keys(statusCountryCounts).sort().map((k) => {
-    const idx = k.lastIndexOf('||');
-    return { status: k.slice(0, idx), country: k.slice(idx + 2), count: statusCountryCounts[k] };
-  });
+  const countryBreakdown = Object.values(byCountry).sort((a, b) => a.country.localeCompare(b.country));
 
   employees.sort((a, b) => a.country.localeCompare(b.country) || a.name.localeCompare(b.name));
 
-  return { employees, statusBreakdown, statusCountryBreakdown };
+  return { employees, statusBreakdown, countryBreakdown };
 }
 
 export function evaluateRoster(bankRows, adjRows) {
