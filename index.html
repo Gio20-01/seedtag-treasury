@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -20,7 +20,6 @@
 html,body{height:100%;}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(--t1);}
 
-/* ── Loading overlay ─────────────────────────────────────── */
 #lo{position:fixed;inset:0;z-index:9999;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;transition:opacity .5s;}
 #lo.fo{opacity:0;pointer-events:none;}
 .aologc{width:40px;height:40px;background:var(--accent);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff;}
@@ -28,30 +27,29 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .aopf{height:100%;background:var(--accent);border-radius:2px;width:10%;transition:width .4s;}
 .aolbl{font-size:13px;color:var(--t2);}
 
-/* ── Error / access-denied overlays ──────────────────────── */
 #es,#ps{display:none;position:fixed;inset:0;background:var(--bg);align-items:center;justify-content:center;z-index:9998;}
 .gbox{background:var(--white);border:1px solid var(--b1);border-radius:var(--rxl);box-shadow:var(--shadow);padding:40px;max-width:440px;text-align:center;}
 .gbox .em{font-size:32px;margin-bottom:12px;}
 .gbox h2{font-size:19px;margin-bottom:10px;}
 .gbox p{font-size:13.5px;color:var(--t2);line-height:1.6;}
 .gbox a{color:var(--accent);}
-.gbtn{margin-top:18px;border:0;background:var(--accent);color:#fff;border-radius:var(--rsm);padding:10px 18px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.gbtn{border:0;background:var(--accent);color:#fff;border-radius:var(--rsm);padding:10px 18px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;}
 .gbtn.ghost{background:var(--accent-light);color:var(--accent);}
+.gbtn.danger{background:#fbe9e9;color:var(--poor);}
+.gbtn:disabled{opacity:.5;cursor:default;}
 
-/* ── Request-access modal (mai window.confirm/prompt) ────── */
 .overlay{position:fixed;inset:0;background:rgba(28,25,23,.35);display:none;align-items:center;justify-content:center;z-index:10000;}
 .overlay.open{display:flex;}
 .overlay .gbox{text-align:left;}
-.overlay textarea{width:100%;border:1px solid var(--b2);border-radius:var(--rsm);padding:10px;font:inherit;font-size:13px;margin:12px 0 16px;resize:vertical;}
+.overlay textarea,.overlay input,.overlay select{width:100%;border:1px solid var(--b2);border-radius:var(--rsm);padding:9px 10px;font:inherit;font-size:13px;margin:8px 0 14px;resize:vertical;}
 .overlay .row{display:flex;gap:8px;margin-top:4px;}
 
-/* ── Authenticated shell ──────────────────────────────────── */
 #app{display:none;height:100vh;flex-direction:column;}
 .topbar{height:var(--hh);background:var(--white);border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:14px;padding:0 22px;flex-shrink:0;}
-.lm{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;}
+.lm{width:32px;height:32px;background:var(--accent);border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-size:12px;flex-shrink:0;}
 .ttitle{font-size:14px;font-weight:700;}
 .ttitle small{display:block;font-size:11px;font-weight:500;color:var(--t2);}
-.tuser{margin-left:auto;font-size:12px;color:var(--t2);}
+.tuser{margin-left:auto;font-size:12px;color:var(--t2);display:flex;align-items:center;}
 .role-pill{display:inline-flex;align-items:center;background:var(--accent-light);color:var(--accent);border-radius:99px;padding:3px 10px;font-size:11px;font-weight:700;margin-left:8px;}
 .shell2{display:flex;flex:1;overflow:hidden;}
 .side{width:var(--sw);background:var(--white);border-right:1px solid var(--b1);overflow:auto;flex-shrink:0;padding:14px 0;}
@@ -63,44 +61,80 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
 .placeholder-card{background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:28px;max-width:520px;}
 .placeholder-card h2{font-size:16px;margin-bottom:8px;}
 .placeholder-card p{font-size:13px;color:var(--t2);line-height:1.6;}
+
+.page-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+.page-head h1{font-size:20px;}
+.subtabs{display:flex;gap:6px;margin-bottom:20px;}
+.subtab{border:1px solid var(--b1);background:var(--white);border-radius:99px;padding:7px 14px;font:inherit;font-size:12.5px;font-weight:600;color:var(--t2);cursor:pointer;}
+.subtab.active{background:var(--accent);color:#fff;border-color:var(--accent);}
+.panel{background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);overflow:hidden;}
+table{width:100%;border-collapse:collapse;}
+th{background:var(--bg);font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);text-align:left;padding:10px 16px;font-weight:700;}
+td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-align:middle;}
+.empty-row{padding:26px;text-align:center;color:var(--t3);font-size:13px;}
+.mini-input{border:1px solid var(--b2);border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;width:100%;}
+.mini-select{border:1px solid var(--b2);border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px;}
+.row-actions{display:flex;gap:6px;}
+.sbtn{border:0;border-radius:8px;padding:6px 11px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;}
+.sbtn.ok{background:#e6f4ea;color:var(--ok);}
+.sbtn.no{background:#fbe9e9;color:var(--poor);}
+.sbtn.save{background:var(--accent-light);color:var(--accent);}
+.toast{position:fixed;bottom:20px;right:20px;background:var(--t1);color:#fff;padding:11px 18px;border-radius:var(--rsm);font-size:13px;z-index:10001;opacity:0;transform:translateY(8px);transition:.25s;pointer-events:none;}
+.toast.show{opacity:1;transform:none;}
+.add-row{padding:14px 16px;border-top:1px solid var(--b1);display:flex;gap:8px;align-items:center;background:var(--bg);}
 </style>
 </head>
 <body>
 
-<!-- LOADING -->
 <div id="lo">
   <div class="aologc">TR</div>
   <div class="aopt"><div class="aopf" id="aopf"></div></div>
   <div class="aolbl" id="aolbl">Loading Treasury…</div>
 </div>
 
-<!-- ERROR -->
 <div id="es"><div class="gbox"><div class="em">⚠️</div><h2>Something went wrong</h2><p id="emsg">Could not load Treasury.</p></div></div>
 
-<!-- ACCESS DENIED / REQUEST ACCESS -->
 <div id="ps"><div class="gbox">
   <div class="em">🔒</div>
-  <h2>Accesso non disponibile</h2>
-  <p>Il tuo account non ha ancora un ruolo assegnato per Treasury Reimbursements. Contatta
-    <a href="mailto:talent@seedtag.com">People &amp; Talent</a> o
-    <a href="mailto:treasury@seedtag.com">FinOps Treasury</a>, oppure richiedi l'accesso qui sotto.</p>
-  <button class="gbtn" onclick="openRequestAccess()">Richiedi accesso</button>
+  <h2>Access not available</h2>
+  <p>Your account doesn't have a role assigned for Treasury Reimbursements yet. Contact
+    <a href="mailto:talent@seedtag.com">People &amp; Talent</a> or
+    <a href="mailto:treasury@seedtag.com">FinOps Treasury</a>, or request access below.</p>
+  <button class="gbtn" onclick="openRequestAccess()">Request access</button>
 </div></div>
 
-<!-- REQUEST ACCESS MODAL -->
 <div id="overlay-request" class="overlay">
   <div class="gbox">
-    <h2>Richiedi accesso</h2>
-    <p>Un SuperAdmin dovrà approvare la richiesta prima che tu possa accedere.</p>
-    <textarea id="input-reason" rows="3" placeholder="Motivo della richiesta (opzionale)"></textarea>
+    <h2>Request access</h2>
+    <p>A SuperAdmin will need to approve this before you can access the app.</p>
+    <textarea id="input-reason" rows="3" placeholder="Reason for your request (optional)"></textarea>
     <div class="row">
-      <button class="gbtn" id="btn-submit-request">Invia richiesta</button>
-      <button class="gbtn ghost" id="btn-cancel-request">Annulla</button>
+      <button class="gbtn" id="btn-submit-request">Send request</button>
+      <button class="gbtn ghost" id="btn-cancel-request">Cancel</button>
     </div>
   </div>
 </div>
 
-<!-- AUTHENTICATED SHELL -->
+<div id="overlay-resolve" class="overlay">
+  <div class="gbox">
+    <h2 id="resolve-title">Resolve request</h2>
+    <p id="resolve-sub"></p>
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Role to assign</label>
+    <select id="resolve-role">
+      <option value="Treasury Ops">Treasury Ops</option>
+      <option value="Admin">Admin</option>
+      <option value="SuperAdmin">SuperAdmin</option>
+    </select>
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Note (optional)</label>
+    <textarea id="resolve-note" rows="2" placeholder="Internal note"></textarea>
+    <div class="row">
+      <button class="gbtn" id="btn-confirm-approve">Approve</button>
+      <button class="gbtn danger" id="btn-confirm-reject">Reject</button>
+      <button class="gbtn ghost" id="btn-cancel-resolve">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="app">
   <div class="topbar">
     <div class="lm">TR</div>
@@ -109,26 +143,20 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);color:var(-
   </div>
   <div class="shell2">
     <aside class="side" id="sideMenu">
-      <div class="side-label">Anno</div>
-      <button class="nav active">2026</button>
-      <div class="side-label" id="config-label" style="display:none;">Amministrazione</div>
-      <button class="nav" id="config-nav" style="display:none;" onclick="alert('placeholder')">⚙ Config</button>
+      <div class="side-label">Year</div>
+      <button class="nav active" data-page="overview" onclick="nav('overview')">2026</button>
+      <div class="side-label" id="config-label" style="display:none;">Administration</div>
+      <button class="nav" id="config-nav" data-page="config" style="display:none;" onclick="nav('config')">⚙ Config</button>
     </aside>
-    <main class="main" id="main">
-      <div class="placeholder-card">
-        <h2>Ciao! Sei dentro.</h2>
-        <p>Bootstrap di autenticazione funzionante. Il prossimo pezzo è la vera dashboard (lista richieste mensili, creazione nuova richiesta, dettaglio con status e azioni email).</p>
-      </div>
-    </main>
+    <main class="main" id="main"></main>
   </div>
 </div>
 
+<div class="toast" id="toast"></div>
+
 <script>
-// ══════════════════════════════════════════════════════════
-// AUTH BOOTSTRAP - stesso identico pattern di HR Dashboard/Performance:
-// token via ?token= (GAS Auth Bridge) o localStorage, stessa freshExp().
-// ══════════════════════════════════════════════════════════
 const WK = 'https://seedtag-auth-test.peoplehub.workers.dev';
+const TR = WK + '/api/treasury';
 
 let tok = null, me = null;
 
@@ -148,8 +176,23 @@ function aoDone(){
 }
 function showErr(m){ aoDone(); document.getElementById('emsg').textContent=m; document.getElementById('es').style.display='flex'; }
 function showPriv(){ aoDone(); document.getElementById('ps').style.display='flex'; }
+function toast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2400);
+}
 
-function apiUrl(path){ return WK+path; }
+async function api(path, opts){
+  opts = opts || {};
+  opts.headers = Object.assign({ Authorization:'Bearer '+tok }, opts.headers||{});
+  if(opts.body && typeof opts.body !== 'string'){
+    opts.headers['Content-Type'] = 'application/json';
+    opts.body = JSON.stringify(opts.body);
+  }
+  const r = await fetch(TR+path, opts);
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(d.error || ('HTTP '+r.status));
+  return d;
+}
 
 (async function init(){
   aoP(20);
@@ -163,13 +206,12 @@ function apiUrl(path){ return WK+path; }
 
   aoP(50);
   try{
-    const r = await fetch(apiUrl('/api/treasury/me'), { headers:{ Authorization:'Bearer '+tok } });
+    const r = await fetch(WK+'/api/treasury/me', { headers:{ Authorization:'Bearer '+tok } });
     aoP(80);
     if(r.status===403){ showPriv(); return; }
     if(!r.ok){ const d=await r.json().catch(()=>({})); showErr(d.error||('Server error '+r.status)); return; }
     const d = await r.json();
     me = d;
-
     if(!d.role){ showPriv(); return; }
 
     initApp();
@@ -187,31 +229,210 @@ function initApp(){
     document.getElementById('config-label').style.display='block';
     document.getElementById('config-nav').style.display='flex';
   }
+  nav('overview');
 }
 
-// ── Request access (overlay, mai window.confirm/prompt - bloccati in iframe Sites) ──
+function nav(page){
+  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
+  if(page==='overview') renderOverview();
+  if(page==='config') renderConfig('access-requests');
+}
+
+function renderOverview(){
+  document.getElementById('main').innerHTML =
+    '<div class="placeholder-card">' +
+    '<h2>You are in.</h2>' +
+    '<p>Auth bootstrap is working. Next up: the real dashboard - monthly requests list, create new request, and the detail view with employee status + email actions.</p>' +
+    '</div>';
+}
+
+let _configTab = 'access-requests';
+
+function renderConfig(tab){
+  _configTab = tab;
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<div class="page-head"><h1>Configuration</h1></div>' +
+    '<div class="subtabs">' +
+      '<button class="subtab ' + (tab==='access-requests'?'active':'') + '" onclick="renderConfig(\'access-requests\')">Access Requests</button>' +
+      '<button class="subtab ' + (tab==='users'?'active':'') + '" onclick="renderConfig(\'users\')">Users &amp; Roles</button>' +
+      '<button class="subtab ' + (tab==='settings'?'active':'') + '" onclick="renderConfig(\'settings\')">Settings</button>' +
+    '</div>' +
+    '<div class="panel" id="config-panel"><div class="empty-row">Loading…</div></div>';
+  if(tab==='access-requests') loadAccessRequests();
+  if(tab==='users') loadUsers();
+  if(tab==='settings') loadSettings();
+}
+
+async function loadAccessRequests(){
+  const panel = document.getElementById('config-panel');
+  try{
+    const d = await api('/config/access-requests');
+    const rows = d.requests || [];
+    if(!rows.length){ panel.innerHTML = '<div class="empty-row">No pending access requests.</div>'; return; }
+    panel.innerHTML = '<table><thead><tr><th>Email</th><th>Reason</th><th>Requested</th><th></th></tr></thead><tbody>' +
+      rows.map(function(r){
+        return '<tr>' +
+          '<td>'+esc(r.email)+'</td>' +
+          '<td>'+esc(r.reason||'—')+'</td>' +
+          '<td>'+esc(r.requested_at)+'</td>' +
+          '<td class="row-actions"><button class="sbtn ok" onclick=\'openResolve('+JSON.stringify(r).replace(/'/g,'&#39;')+')\'>Review</button></td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){ panel.innerHTML = '<div class="empty-row">Error loading requests: '+esc(e.message)+'</div>'; }
+}
+
+let _resolvingRequest = null;
+function openResolve(req){
+  _resolvingRequest = req;
+  document.getElementById('resolve-title').textContent = 'Resolve: '+req.email;
+  document.getElementById('resolve-sub').textContent = req.reason || 'No reason provided.';
+  document.getElementById('resolve-note').value = '';
+  document.getElementById('resolve-role').value = 'Treasury Ops';
+  document.getElementById('overlay-resolve').classList.add('open');
+}
+document.getElementById('btn-cancel-resolve').addEventListener('click', function(){
+  document.getElementById('overlay-resolve').classList.remove('open');
+});
+async function resolveRequest(decision){
+  const role = document.getElementById('resolve-role').value;
+  const note = document.getElementById('resolve-note').value;
+  try{
+    await api('/config/access-requests/'+_resolvingRequest.id+'/resolve', {
+      method:'POST', body:{ decision:decision, role:(decision==='approved'?role:undefined), note:note, employee:_resolvingRequest.name }
+    });
+    document.getElementById('overlay-resolve').classList.remove('open');
+    toast(decision==='approved' ? 'Access approved' : 'Request rejected');
+    loadAccessRequests();
+  }catch(e){ toast('Error: '+e.message); }
+}
+document.getElementById('btn-confirm-approve').addEventListener('click', function(){ resolveRequest('approved'); });
+document.getElementById('btn-confirm-reject').addEventListener('click', function(){ resolveRequest('rejected'); });
+
+async function loadUsers(){
+  const panel = document.getElementById('config-panel');
+  try{
+    const d = await api('/config/users');
+    const rows = d.users || [];
+    panel.innerHTML = '<table><thead><tr><th>Email</th><th>Name</th><th>Role</th><th></th></tr></thead><tbody>' +
+      rows.map(function(u,i){
+        return '<tr>' +
+          '<td>'+esc(u.email)+'</td>' +
+          '<td>'+esc(u.employee||'—')+'</td>' +
+          '<td><select class="mini-select" id="role-'+i+'">' +
+            '<option value="Treasury Ops"'+(u.role==='Treasury Ops'?' selected':'')+'>Treasury Ops</option>' +
+            '<option value="Admin"'+(u.role==='Admin'?' selected':'')+'>Admin</option>' +
+            '<option value="SuperAdmin"'+(u.role==='SuperAdmin'?' selected':'')+'>SuperAdmin</option>' +
+          '</select></td>' +
+          '<td class="row-actions">' +
+            '<button class="sbtn save" onclick=\'saveUserRole('+JSON.stringify(u).replace(/'/g,'&#39;')+', '+i+')\'>Save</button>' +
+            '<button class="sbtn no" onclick=\'removeUser('+JSON.stringify(u).replace(/'/g,'&#39;')+')\'>Remove</button>' +
+          '</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>' +
+      '<div class="add-row">' +
+        '<input class="mini-input" id="new-user-email" placeholder="email@seedtag.com" style="max-width:220px;">' +
+        '<input class="mini-input" id="new-user-name" placeholder="Name (optional)" style="max-width:180px;">' +
+        '<select class="mini-select" id="new-user-role">' +
+          '<option value="Treasury Ops">Treasury Ops</option>' +
+          '<option value="Admin">Admin</option>' +
+          '<option value="SuperAdmin">SuperAdmin</option>' +
+        '</select>' +
+        '<button class="sbtn save" onclick="addUser()">+ Add</button>' +
+      '</div>';
+  }catch(e){ panel.innerHTML = '<div class="empty-row">Error loading users: '+esc(e.message)+'</div>'; }
+}
+async function saveUserRole(user, i){
+  const role = document.getElementById('role-'+i).value;
+  try{
+    await api('/config/users', { method:'POST', body:{ email:user.email, employee:user.employee, role:role } });
+    toast('Role updated for '+user.email);
+    loadUsers();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function removeUser(user){
+  try{
+    await api('/config/users', { method:'POST', body:{ email:user.email, employee:user.employee, role:'' } });
+    toast('Access removed for '+user.email);
+    loadUsers();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function addUser(){
+  const email = document.getElementById('new-user-email').value.trim();
+  const name = document.getElementById('new-user-name').value.trim();
+  const role = document.getElementById('new-user-role').value;
+  if(!email){ toast('Email required'); return; }
+  try{
+    await api('/config/users', { method:'POST', body:{ email:email, employee:name, role:role } });
+    toast('User added');
+    loadUsers();
+  }catch(e){ toast('Error: '+e.message); }
+}
+
+async function loadSettings(){
+  const panel = document.getElementById('config-panel');
+  try{
+    const d = await api('/config/settings');
+    const rows = d.settings || [];
+    panel.innerHTML = '<table><thead><tr><th>Key</th><th>Value</th><th></th></tr></thead><tbody>' +
+      rows.map(function(s,i){
+        return '<tr>' +
+          '<td>'+esc(s.key)+'</td>' +
+          '<td><input class="mini-input" id="setting-val-'+i+'" value="'+esc(s.value||'')+'"></td>' +
+          '<td class="row-actions"><button class="sbtn save" onclick="saveSetting(\''+esc(s.key)+'\', '+i+')">Save</button></td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>' +
+      '<div class="add-row">' +
+        '<input class="mini-input" id="new-setting-key" placeholder="key (e.g. treasury_cc)" style="max-width:220px;">' +
+        '<input class="mini-input" id="new-setting-val" placeholder="value" style="max-width:220px;">' +
+        '<button class="sbtn save" onclick="addSetting()">+ Add</button>' +
+      '</div>';
+  }catch(e){ panel.innerHTML = '<div class="empty-row">Error loading settings: '+esc(e.message)+'</div>'; }
+}
+async function saveSetting(key, i){
+  const value = document.getElementById('setting-val-'+i).value;
+  try{
+    await api('/config/settings', { method:'POST', body:{ key:key, value:value } });
+    toast('Saved '+key);
+    loadSettings();
+  }catch(e){ toast('Error: '+e.message); }
+}
+async function addSetting(){
+  const key = document.getElementById('new-setting-key').value.trim();
+  const value = document.getElementById('new-setting-val').value.trim();
+  if(!key){ toast('Key required'); return; }
+  try{
+    await api('/config/settings', { method:'POST', body:{ key:key, value:value } });
+    toast('Setting added');
+    loadSettings();
+  }catch(e){ toast('Error: '+e.message); }
+}
+
 function openRequestAccess(){ document.getElementById('overlay-request').classList.add('open'); }
-document.getElementById('btn-cancel-request').addEventListener('click', ()=>{
+document.getElementById('btn-cancel-request').addEventListener('click', function(){
   document.getElementById('overlay-request').classList.remove('open');
 });
-document.getElementById('btn-submit-request').addEventListener('click', async ()=>{
+document.getElementById('btn-submit-request').addEventListener('click', async function(){
   const reason = document.getElementById('input-reason').value;
   const btn = document.getElementById('btn-submit-request');
-  btn.disabled = true; btn.textContent = 'Invio...';
+  btn.disabled = true; btn.textContent = 'Sending...';
   try{
-    await fetch(apiUrl('/api/treasury/access-requests'), {
+    await fetch(TR+'/access-requests', {
       method:'POST',
       headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+tok },
-      body: JSON.stringify({ reason })
+      body: JSON.stringify({ reason:reason })
     });
     document.getElementById('overlay-request').classList.remove('open');
-    document.querySelector('#ps .gbox p').textContent = 'Richiesta inviata. Riceverai accesso non appena un SuperAdmin la approva.';
+    document.querySelector('#ps .gbox p').textContent = 'Request sent. You will get access as soon as a SuperAdmin approves it.';
     document.querySelector('#ps .gbtn').style.display='none';
   }catch(e){
-    btn.disabled = false; btn.textContent = 'Invia richiesta';
-    alert('Errore di rete, riprova.'); // fuori dall'iframe Sites in caso di errore di rete puro è accettabile
+    btn.disabled = false; btn.textContent = 'Send request';
   }
 });
+
+function esc(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
 </script>
 </body>
 </html>
