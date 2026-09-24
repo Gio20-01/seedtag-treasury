@@ -333,31 +333,35 @@ function monthLabelFromDate(dStr){
 async function renderOverview(){
   const main = document.getElementById('main');
   main.innerHTML =
-    '<div class="page-head"><h1>Overview</h1><button class="gbtn" onclick="openNewRequest()">+ New Request</button></div>' +
-    '<div class="panel" id="overview-panel" style="margin-bottom:24px;"><div class="empty-row">Loading country status…</div></div>' +
-    '<div class="page-head" style="margin-bottom:12px;"><h1 style="font-size:15px;">Operations</h1></div>' +
-    '<div style="display:flex;gap:10px;margin-bottom:20px;">' +
-      '<button class="gbtn ghost" onclick="doRefreshPersonio()" id="refresh-btn">↻ Refresh Personio Data</button>' +
-      '<button class="gbtn ghost" onclick="openQuickCheck()">🔍 Check Employees</button>' +
+    '<div class="page-head">' +
+      '<h1>Overview</h1>' +
+      '<div style="display:flex;gap:8px;">' +
+        '<button class="gbtn ghost" onclick="doRefreshPersonio()" id="refresh-btn">↻ Refresh Personio Data</button>' +
+        '<button class="gbtn ghost" onclick="openQuickCheck()">🔍 Check Employees</button>' +
+        '<button class="gbtn" onclick="openNewRequest()">+ New Request</button>' +
+      '</div>' +
     '</div>' +
+    '<div id="overview-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:24px;"><div class="empty-row">Loading country status…</div></div>' +
     '<div id="quickcheck-results"></div>';
   try{
     const d = await api('/overview');
-    const rows = d.byCountry || [];
-    const panel = document.getElementById('overview-panel');
-    if(!rows.length){ panel.innerHTML = '<div class="empty-row">No employee data found.</div>'; return; }
-    panel.innerHTML = '<table><thead><tr><th>Country</th><th>Total</th><th>OK</th><th>Missing Optional</th><th>Missing Mandatory</th><th>Inactive / Leave</th></tr></thead><tbody>' +
-      rows.map(function(r){
-        return '<tr>' +
-          '<td>'+esc(r.country)+'</td>' +
-          '<td>'+r.total+'</td>' +
-          '<td style="color:#1E7A45;font-weight:700;">'+r.OK+'</td>' +
-          '<td style="color:#B07A00;">'+r.OK_MISSING_OPTIONAL+'</td>' +
-          '<td style="color:#B02A2A;font-weight:700;">'+r.MISSING_MANDATORY+'</td>' +
-          '<td style="color:var(--t3);">'+(r.INACTIVE+r.ON_LEAVE)+'</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table>';
-  }catch(e){ document.getElementById('overview-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+    const rows = (d.byCountry || []).map(function(r){
+      return { country:r.country, active: r.OK+r.OK_MISSING_OPTIONAL+r.MISSING_MANDATORY, OK:r.OK, opt:r.OK_MISSING_OPTIONAL, mand:r.MISSING_MANDATORY };
+    }).filter(function(r){ return r.active > 0; });
+    const cards = document.getElementById('overview-cards');
+    if(!rows.length){ cards.innerHTML = '<div class="empty-row">No employee data found.</div>'; return; }
+    cards.innerHTML = rows.map(function(r){
+      return '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:16px;">' +
+        '<div style="font-size:13px;font-weight:700;margin-bottom:10px;">'+esc(r.country)+'</div>' +
+        '<div style="font-size:24px;font-weight:800;margin-bottom:10px;">'+r.active+'<span style="font-size:11px;font-weight:500;color:var(--t3);margin-left:4px;">active</span></div>' +
+        '<div style="display:flex;gap:8px;font-size:11px;">' +
+          '<span style="color:#1E7A45;font-weight:700;">'+r.OK+' OK</span>' +
+          '<span style="color:#B07A00;font-weight:700;">'+r.opt+' opt</span>' +
+          '<span style="color:#B02A2A;font-weight:700;">'+r.mand+' mand</span>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }catch(e){ document.getElementById('overview-cards').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
 
   buildYearTree();
 }
