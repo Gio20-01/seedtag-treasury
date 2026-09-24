@@ -83,6 +83,63 @@ export function isEmpty(v) {
   return false;
 }
 
+// Valuta TUTTI gli employee del roster (AdjData), non solo quelli aggiunti
+// a una richiesta mensile - usato dalla dashboard Overview per il conteggio
+// aggregato per paese. Nessun input esterno da matchare: ogni riga AdjData
+// è già la fonte di verità sull'email.
+export function evaluateRoster(bankRows, adjRows) {
+  const bankByEmail = {};
+  bankRows.forEach((r) => {
+    const e = String(r.Email || '').trim().toLowerCase();
+    if (e) bankByEmail[e] = r;
+  });
+
+  const byCountry = {};
+  function bucket(country) {
+    if (!byCountry[country]) {
+      byCountry[country] = {
+        country, total: 0, OK: 0, OK_MISSING_OPTIONAL: 0, MISSING_MANDATORY: 0,
+        INACTIVE: 0, ON_LEAVE: 0, COUNTRY_NOT_MAPPED: 0
+      };
+    }
+    return byCountry[country];
+  }
+
+  adjRows.forEach((adj) => {
+    const email = String(adj.Email || '').trim().toLowerCase();
+    if (!email) return;
+    const rawStatus = String(adj.Status || '').trim().toLowerCase();
+
+    let status, country;
+    if (rawStatus === 'leave') {
+      country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
+      status = 'ON_LEAVE';
+    } else if (rawStatus !== 'active') {
+      country = resolveCountry(adj.Country) || adj.Country || 'Unmapped';
+      status = 'INACTIVE';
+    } else {
+      const resolved = resolveCountry(adj.Country);
+      if (!resolved || !REQUIREMENTS[resolved]) {
+        country = adj.Country || 'Unmapped';
+        status = 'COUNTRY_NOT_MAPPED';
+      } else {
+        country = resolved;
+        const bankRec = bankByEmail[email] || {};
+        const req = REQUIREMENTS[country];
+        const missingMand = req.mandatory.filter((f) => isEmpty(bankRec[f]));
+        const missingOpt = req.optional.filter((f) => isEmpty(bankRec[f]));
+        status = missingMand.length ? 'MISSING_MANDATORY' : (missingOpt.length ? 'OK_MISSING_OPTIONAL' : 'OK');
+      }
+    }
+
+    const b = bucket(country);
+    b.total++;
+    b[status] = (b[status] || 0) + 1;
+  });
+
+  return Object.values(byCountry).sort((a, b) => b.total - a.total);
+}
+
 // Detects an email-like column when there's no exact "Email" header,
 // by scanning cell values in the first data row(s) for an "@" pattern.
 export function findEmailKey(row) {
