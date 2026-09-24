@@ -12,10 +12,10 @@ database_id = "b5c0643b-346d-499c-bcc7-3d52e22cb294"
 
 [vars]
 SHEET_ID = "1cjCJWSdIlhTY1-DRIJjmCM-RoEEe0OYB0iVIX3gkPfs"
+OPERATIONAL_SHEET_ID = "1PGQSebWGGmj4h6KNTeQCDVSI6p448oKizmtjF5zxUpk"
 ADJDATA_TAB = "[IMPORT] AdjData"
 PAYMENT_DAY_DEFAULT = "10"
 
-# URL dei due GAS standalone (Web App), non sensibili di per sé
 TREASURY_EMAIL_GAS_URL = "https://script.google.com/macros/s/AKfycbyJOBRBbJNNBMbPqNtLJ_3dhT_XADqQVAN8rqZsnwFc_V2jhC3i7tFd6AeLKr5A5OWiDg/exec"
 TREASURY_IMPORT_GAS_URL = "https://script.google.com/macros/s/AKfycbwEgQzZsswK2fBjwcHsirHaSc1wNIV-hLKKyxIbVh4eSx42SjTww1by6aMq2DQYu70ZRA/exec"
 
