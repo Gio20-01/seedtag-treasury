@@ -103,6 +103,18 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
   <button class="gbtn" onclick="openRequestAccess()">Request access</button>
 </div></div>
 
+<div id="overlay-mismatch" class="overlay">
+  <div class="gbox">
+    <h2>⚠️ Status mismatch</h2>
+    <p>These selected people don't match the template you picked. Send anyway?</p>
+    <ul id="mismatch-list" style="font-size:13px;line-height:1.9;max-height:200px;overflow:auto;padding-left:18px;margin-bottom:14px;"></ul>
+    <div class="row">
+      <button class="gbtn danger" id="btn-confirm-mismatch">Send anyway</button>
+      <button class="gbtn ghost" id="btn-cancel-mismatch">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="overlay-request" class="overlay">
   <div class="gbox">
     <h2>Request access</h2>
@@ -150,19 +162,6 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
       <button class="nav" id="config-nav" data-page="config" style="display:none;" onclick="nav('config')">⚙ Config</button>
     </aside>
     <main class="main" id="main"></main>
-  </div>
-</div>
-
-<div id="overlay-quickcheck" class="overlay">
-  <div class="gbox">
-    <h2>Check Employees</h2>
-    <p>Paste a list to check their status right now - nothing gets saved, this is just a quick lookup.</p>
-    <textarea id="qc-textarea" rows="8" placeholder="jane.doe@seedtag.com
-John Smith, john.smith@seedtag.com"></textarea>
-    <div class="row">
-      <button class="gbtn" onclick="submitQuickCheck()">Check</button>
-      <button class="gbtn ghost" onclick="document.getElementById('overlay-quickcheck').classList.remove('open')">Cancel</button>
-    </div>
   </div>
 </div>
 
@@ -293,6 +292,7 @@ function nav(page, param){
   document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.page===page || (page==='request' && b.dataset.page==='request-'+param)));
   if(page==='overview') renderOverview();
   if(page==='fieldmap') renderFieldMap();
+  if(page==='checkall') renderCheckAll();
   if(page==='config') renderConfig('access-requests');
   if(page==='request') renderRequestDetail(param);
 }
@@ -330,6 +330,10 @@ function monthLabelFromDate(dStr){
   return M[d.getMonth()] + ' ' + d.getFullYear();
 }
 
+let _countryRows = [];
+let _countryView = 'card'; // 'card' | 'table'
+let _countryExpanded = false;
+
 async function renderOverview(){
   const main = document.getElementById('main');
   main.innerHTML =
@@ -337,20 +341,78 @@ async function renderOverview(){
       '<h1>Overview</h1>' +
       '<div style="display:flex;gap:8px;">' +
         '<button class="gbtn ghost" onclick="doRefreshPersonio()" id="refresh-btn">↻ Refresh Personio Data</button>' +
-        '<button class="gbtn ghost" onclick="openQuickCheck()">🔍 Check Employees</button>' +
+        '<button class="gbtn ghost" onclick="nav(\'checkall\')">🔍 Check Employees</button>' +
         '<button class="gbtn" onclick="openNewRequest()">+ New Request</button>' +
       '</div>' +
     '</div>' +
-    '<div id="overview-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;margin-bottom:24px;"><div class="empty-row">Loading country status…</div></div>' +
-    '<div id="quickcheck-results"></div>';
+    '<div id="general-card" style="margin-bottom:14px;"><div class="empty-row">Loading…</div></div>' +
+    '<div id="country-section" style="display:none;"></div>';
   try{
     const d = await api('/overview');
     const rows = (d.byCountry || []).map(function(r){
       return { country:r.country, active: r.OK+r.OK_MISSING_OPTIONAL+r.MISSING_MANDATORY, OK:r.OK, opt:r.OK_MISSING_OPTIONAL, mand:r.MISSING_MANDATORY };
     }).filter(function(r){ return r.active > 0; });
-    const cards = document.getElementById('overview-cards');
-    if(!rows.length){ cards.innerHTML = '<div class="empty-row">No employee data found.</div>'; return; }
-    cards.innerHTML = rows.map(function(r){
+    _countryRows = rows;
+
+    const total = { active:0, OK:0, opt:0, mand:0 };
+    rows.forEach(function(r){ total.active+=r.active; total.OK+=r.OK; total.opt+=r.opt; total.mand+=r.mand; });
+
+    document.getElementById('general-card').innerHTML =
+      '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:20px 22px;cursor:pointer;" onclick="toggleCountrySection()">' +
+        '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+          '<span style="font-size:13px;font-weight:700;">All countries</span>' +
+          '<span id="expand-caret" style="margin-left:auto;color:var(--t2);font-size:12px;">▾ Show breakdown</span>' +
+        '</div>' +
+        '<div style="display:flex;gap:24px;">' +
+          '<div><div style="font-size:26px;font-weight:800;">'+total.active+'</div><div style="font-size:11px;color:var(--t2);">active</div></div>' +
+          '<div><div style="font-size:26px;font-weight:800;color:#1E7A45;">'+total.OK+'</div><div style="font-size:11px;color:var(--t2);">OK</div></div>' +
+          '<div><div style="font-size:26px;font-weight:800;color:#B07A00;">'+total.opt+'</div><div style="font-size:11px;color:var(--t2);">missing optional</div></div>' +
+          '<div><div style="font-size:26px;font-weight:800;color:#B02A2A;">'+total.mand+'</div><div style="font-size:11px;color:var(--t2);">missing mandatory</div></div>' +
+        '</div>' +
+      '</div>';
+
+    renderCountrySection();
+  }catch(e){ document.getElementById('general-card').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+
+  buildYearTree();
+}
+
+function toggleCountrySection(){
+  _countryExpanded = !_countryExpanded;
+  document.getElementById('country-section').style.display = _countryExpanded ? 'block' : 'none';
+  document.getElementById('expand-caret').textContent = _countryExpanded ? '▴ Hide breakdown' : '▾ Show breakdown';
+}
+
+function setCountryView(view){
+  _countryView = view;
+  renderCountrySection();
+}
+
+function renderCountrySection(){
+  const section = document.getElementById('country-section');
+  const rows = _countryRows;
+  const viewToggle =
+    '<div style="display:flex;gap:6px;margin:14px 0 12px;">' +
+      '<button class="subtab '+(_countryView==='card'?'active':'')+'" onclick="setCountryView(\'card\')">Cards</button>' +
+      '<button class="subtab '+(_countryView==='table'?'active':'')+'" onclick="setCountryView(\'table\')">Table</button>' +
+    '</div>';
+
+  if(!rows.length){ section.innerHTML = viewToggle + '<div class="empty-row">No employee data found.</div>'; return; }
+
+  if(_countryView==='table'){
+    section.innerHTML = viewToggle + '<div class="panel"><table><thead><tr><th>Country</th><th>Active</th><th>OK</th><th>Missing Optional</th><th>Missing Mandatory</th></tr></thead><tbody>' +
+      rows.map(function(r){
+        return '<tr><td>'+esc(r.country)+'</td><td>'+r.active+'</td>' +
+          '<td style="color:#1E7A45;font-weight:700;">'+r.OK+'</td>' +
+          '<td style="color:#B07A00;">'+r.opt+'</td>' +
+          '<td style="color:#B02A2A;font-weight:700;">'+r.mand+'</td></tr>';
+      }).join('') + '</tbody></table></div>';
+    return;
+  }
+
+  section.innerHTML = viewToggle +
+    '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;">' +
+    rows.map(function(r){
       return '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rlg);padding:16px;">' +
         '<div style="font-size:13px;font-weight:700;margin-bottom:10px;">'+esc(r.country)+'</div>' +
         '<div style="font-size:24px;font-weight:800;margin-bottom:10px;">'+r.active+'<span style="font-size:11px;font-weight:500;color:var(--t3);margin-left:4px;">active</span></div>' +
@@ -360,10 +422,7 @@ async function renderOverview(){
           '<span style="color:#B02A2A;font-weight:700;">'+r.mand+' mand</span>' +
         '</div>' +
       '</div>';
-    }).join('');
-  }catch(e){ document.getElementById('overview-cards').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
-
-  buildYearTree();
+    }).join('') + '</div>';
 }
 
 async function doRefreshPersonio(){
@@ -376,34 +435,41 @@ async function doRefreshPersonio(){
   btn.disabled = false; btn.textContent = '↻ Refresh Personio Data';
 }
 
-function openQuickCheck(){
-  document.getElementById('qc-textarea').value = '';
-  document.getElementById('quickcheck-results').innerHTML = '';
-  document.getElementById('overlay-quickcheck').classList.add('open');
-}
-async function submitQuickCheck(){
-  const text = document.getElementById('qc-textarea').value;
-  const rows = parsePastedEmployees(text);
-  if(!rows.length){ toast('No valid emails found'); return; }
+// ── Check Employees: TUTTI gli employee, nessun paste, mai valori bancari ──
+async function renderCheckAll(){
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<div class="page-head"><h1>Check Employees</h1><button class="gbtn ghost" onclick="nav(\'overview\')">← Back to Overview</button></div>' +
+    '<div class="panel" id="checkall-status" style="margin-bottom:16px;"><div class="empty-row">Loading…</div></div>' +
+    '<div class="panel" id="checkall-statuscountry" style="margin-bottom:16px;"></div>' +
+    '<div class="panel" id="checkall-employees"><div class="empty-row">Loading…</div></div>';
   try{
-    const d = await api('/quick-check', { method:'POST', body:{ rows: rows } });
-    document.getElementById('overlay-quickcheck').classList.remove('open');
-    const employees = d.employees || [];
-    document.getElementById('quickcheck-results').innerHTML =
-      '<div class="panel"><table><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing</th></tr></thead><tbody>' +
-      employees.map(function(e){
-        const missing = e.status==='OK_MISSING_OPTIONAL' ? e.missing_optional : e.missing_mandatory;
-        return '<tr>' +
-          '<td>'+esc(e.input_name||'—')+'</td>' +
-          '<td>'+esc(e.matched_email||e.input_email)+'</td>' +
-          '<td>'+esc(e.country||'—')+'</td>' +
-          '<td>'+statusBadge(e.status)+'</td>' +
-          '<td style="font-size:11.5px;color:var(--t2);">'+esc(missing||'—')+'</td>' +
-        '</tr>';
-      }).join('') + '</tbody></table></div>';
-  }catch(e){ toast('Error: '+e.message); }
-}
+    const d = await api('/roster-check');
+    const sb = d.statusBreakdown || [], sc = d.statusCountryBreakdown || [], emps = d.employees || [];
 
+    document.getElementById('checkall-status').innerHTML =
+      '<table><thead><tr><th>Status</th><th>Count</th></tr></thead><tbody>' +
+      sb.map(function(s){ return '<tr><td>'+statusBadge(s.status)+'</td><td style="font-weight:700;">'+s.count+'</td></tr>'; }).join('') +
+      '</tbody></table>';
+
+    document.getElementById('checkall-statuscountry').innerHTML =
+      '<div style="padding:12px 16px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:.06em;">Status × Country (detail)</div>' +
+      '<table><thead><tr><th>Status</th><th>Country</th><th>Count</th></tr></thead><tbody>' +
+      sc.map(function(s){ return '<tr><td>'+statusBadge(s.status)+'</td><td>'+esc(s.country)+'</td><td style="font-weight:700;">'+s.count+'</td></tr>'; }).join('') +
+      '</tbody></table>';
+
+    document.getElementById('checkall-employees').innerHTML =
+      '<table><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing Mandatory</th><th>Missing Optional</th></tr></thead><tbody>' +
+      emps.map(function(e){
+        return '<tr><td>'+esc(e.name||'—')+'</td><td>'+esc(e.email)+'</td><td>'+esc(e.country)+'</td><td>'+statusBadge(e.status)+'</td>' +
+          '<td style="font-size:11.5px;color:var(--t2);">'+esc(e.missing_mandatory||'—')+'</td>' +
+          '<td style="font-size:11.5px;color:var(--t2);">'+esc(e.missing_optional||'—')+'</td></tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){
+    document.getElementById('checkall-status').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>';
+    document.getElementById('checkall-employees').innerHTML = '';
+  }
+}
 
 // ── Sidebar: Year > Month tree, built from real requests ────────
 async function buildYearTree(){
@@ -460,6 +526,7 @@ async function createRequestSubmit(){
   try{
     const d = await api('/requests', { method:'POST', body:{ month_label:month_label, payment_date:payment_date, personio_deadline_1:personio_deadline_1, personio_deadline_2:personio_deadline_2 } });
     document.getElementById('overlay-newrequest').classList.remove('open');
+    await buildYearTree();
     nav('request', d.id);
   }catch(e){ toast('Error: '+e.message); }
 }
@@ -468,6 +535,7 @@ async function createRequestSubmit(){
 // REQUEST DETAIL
 // ══════════════════════════════════════════════════════════
 let _currentRequestId = null;
+let _currentEmployees = [];
 let _selectedEmployeeIds = new Set();
 
 async function renderRequestDetail(id){
@@ -478,6 +546,7 @@ async function renderRequestDetail(id){
   try{
     const d = await api('/requests/'+id);
     const req = d.request, employees = d.employees || [], counts = d.statusCounts || {};
+    _currentEmployees = employees;
 
     const countsHtml = Object.keys(counts).map(function(k){
       return '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rmd);padding:12px 16px;min-width:120px;">' +
@@ -499,7 +568,7 @@ async function renderRequestDetail(id){
         (req.personio_deadline_2 ? ' / <strong style="color:var(--t1);">'+esc(req.personio_deadline_2)+'</strong>' : '') +
       '</p>' +
       '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'+countsHtml+'</div>' +
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">' +
         '<select class="mini-select" id="bulk-email-type">' +
           '<option value="missing_mandatory">Missing Mandatory</option>' +
           '<option value="optional_reminder">Optional Reminder</option>' +
@@ -507,6 +576,7 @@ async function renderRequestDetail(id){
         '</select>' +
         '<input class="mini-input" id="bulk-deadline" placeholder="Deadline text (e.g. Tomorrow, Aug 7)" style="max-width:220px;">' +
         '<button class="sbtn save" onclick="sendBulkEmail()">Send to selected</button>' +
+        '<button class="sbtn ok" onclick="sendAutoEmail()" title="Sends the matching template to each selected person based on their own status">✨ Send Auto (matched per status)</button>' +
         '<span id="selection-count" style="font-size:12px;color:var(--t2);margin-left:6px;"></span>' +
       '</div>' +
       '<div class="panel" id="employees-panel"></div>';
@@ -552,9 +622,45 @@ function toggleSelect(id, checked){
   document.getElementById('selection-count').textContent = _selectedEmployeeIds.size + ' selected';
 }
 
+// Status atteso per ciascun tipo di email manuale - usato solo per l'avviso,
+// non blocca mai l'invio, chi decide resta sempre la persona.
+const EXPECTED_STATUS_FOR_TYPE = {
+  missing_mandatory: ['MISSING_MANDATORY'],
+  optional_reminder: ['OK_MISSING_OPTIONAL'],
+  confirm: ['OK', 'OK_MISSING_OPTIONAL']
+};
+
 async function sendBulkEmail(){
   if(!_selectedEmployeeIds.size){ toast('Select at least one employee'); return; }
   const type = document.getElementById('bulk-email-type').value;
+  const expected = EXPECTED_STATUS_FOR_TYPE[type] || [];
+  const selected = _currentEmployees.filter(function(e){ return _selectedEmployeeIds.has(e.id); });
+  const mismatches = selected.filter(function(e){ return expected.indexOf(e.status) === -1; });
+
+  if(mismatches.length){
+    openMismatchWarning(mismatches, type);
+    return;
+  }
+  await doSendBulkEmail(type);
+}
+
+function openMismatchWarning(mismatches, type){
+  document.getElementById('mismatch-list').innerHTML = mismatches.map(function(e){
+    return '<li>'+esc(e.matched_email||e.input_email)+' — '+statusBadge(e.status)+'</li>';
+  }).join('');
+  document.getElementById('overlay-mismatch').dataset.pendingType = type;
+  document.getElementById('overlay-mismatch').classList.add('open');
+}
+document.getElementById('btn-cancel-mismatch').addEventListener('click', function(){
+  document.getElementById('overlay-mismatch').classList.remove('open');
+});
+document.getElementById('btn-confirm-mismatch').addEventListener('click', async function(){
+  const type = document.getElementById('overlay-mismatch').dataset.pendingType;
+  document.getElementById('overlay-mismatch').classList.remove('open');
+  await doSendBulkEmail(type);
+});
+
+async function doSendBulkEmail(type){
   const deadlineDate = document.getElementById('bulk-deadline').value;
   try{
     const d = await api('/requests/'+_currentRequestId+'/email', {
@@ -564,6 +670,15 @@ async function sendBulkEmail(){
     toast(okCount + '/' + (d.outcomes||[]).length + ' emails sent');
     renderRequestDetail(_currentRequestId);
   }catch(e){ toast('Error: '+e.message); }
+}
+
+// "Send Auto": ogni selezionato riceve il template giusto secondo il proprio
+// status (OK->confirm, OK_MISSING_OPTIONAL->optional_reminder,
+// MISSING_MANDATORY->missing_mandatory) - nessun mismatch possibile qui,
+// quindi nessun avviso, va dritto.
+async function sendAutoEmail(){
+  if(!_selectedEmployeeIds.size){ toast('Select at least one employee'); return; }
+  await doSendBulkEmail('auto');
 }
 
 // ── Add employees (paste) ───────────────────────────────────
