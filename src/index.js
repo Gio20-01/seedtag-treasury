@@ -108,6 +108,13 @@ export default {
         return json({ error: 'no role assigned' }, 403, origin);
       }
 
+      if (path === '/api/treasury/overview' && request.method === 'GET') {
+        return await getOverviewStats(env, accessToken, origin);
+      }
+      if (path === '/api/treasury/field-map' && request.method === 'GET') {
+        const { REQUIREMENTS } = await import('./matching.js');
+        return json({ requirements: REQUIREMENTS }, 200, origin);
+      }
       if (path === '/api/treasury/requests' && request.method === 'GET') {
         return await listRequests(env, origin);
       }
@@ -255,6 +262,16 @@ async function updateSetting(request, env, actorEmail, origin) {
 async function getSetting(env, key, fallback) {
   const row = await env.DB.prepare('SELECT value FROM treasury_settings WHERE key = ?').bind(key).first();
   return row && row.value ? row.value : fallback;
+}
+
+async function getOverviewStats(env, accessToken, origin) {
+  const [bankRows, adjRows] = await Promise.all([
+    readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
+    readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
+  ]);
+  const { evaluateRoster } = await import('./matching.js');
+  const byCountry = evaluateRoster(bankRows, adjRows);
+  return json({ byCountry }, 200, origin);
 }
 
 // ------------------------------------------------------------
