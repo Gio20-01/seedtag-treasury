@@ -144,6 +144,11 @@ export default {
         return await refreshPersonioNow(env, origin);
       }
 
+      // Quick check ad-hoc: valuta una lista senza creare/salvare nessuna richiesta
+      if (path === '/api/treasury/quick-check' && request.method === 'POST') {
+        return await quickCheck(request, env, accessToken, origin);
+      }
+
       // ── Admin-only: user/role management, access request resolution ──
       if (path === '/api/treasury/config/users' && request.method === 'GET') {
         if (!requireRole(resolved, 'SuperAdmin')) return json({ error: 'forbidden' }, 403, origin);
@@ -305,6 +310,21 @@ async function getRequestDetail(env, id, origin) {
   employees.forEach((e) => { statusCounts[e.status] = (statusCounts[e.status] || 0) + 1; });
 
   return json({ request, employees, statusCounts }, 200, origin);
+}
+
+async function quickCheck(request, env, accessToken, origin) {
+  const body = await request.json();
+  const inputRows = (body.rows || []).map((r) => ({
+    name: r.name || '',
+    email: r.email || (r[findEmailKey(r)] || '')
+  }));
+
+  const [bankRows, adjRows] = await Promise.all([
+    readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
+    readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
+  ]);
+  const evaluated = matchAndEvaluate(bankRows, adjRows, inputRows);
+  return json({ employees: evaluated }, 200, origin);
 }
 
 async function addEmployees(request, env, accessToken, requestId, origin) {
