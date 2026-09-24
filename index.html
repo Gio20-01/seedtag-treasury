@@ -143,8 +143,9 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
   </div>
   <div class="shell2">
     <aside class="side" id="sideMenu">
-      <div class="side-label">Requests</div>
       <button class="nav active" data-page="overview" onclick="nav('overview')">Overview</button>
+      <button class="nav" data-page="fieldmap" onclick="nav('fieldmap')">Field Map</button>
+      <div id="year-tree"></div>
       <div class="side-label" id="config-label" style="display:none;">Administration</div>
       <button class="nav" id="config-nav" data-page="config" style="display:none;" onclick="nav('config')">⚙ Config</button>
     </aside>
@@ -276,8 +277,9 @@ function initApp(){
 }
 
 function nav(page, param){
-  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
+  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.page===page || (page==='request' && b.dataset.page==='request-'+param)));
   if(page==='overview') renderOverview();
+  if(page==='fieldmap') renderFieldMap();
   if(page==='config') renderConfig('access-requests');
   if(page==='request') renderRequestDetail(param);
 }
@@ -318,23 +320,65 @@ function monthLabelFromDate(dStr){
 async function renderOverview(){
   const main = document.getElementById('main');
   main.innerHTML =
-    '<div class="page-head"><h1>Monthly Requests</h1><button class="gbtn" onclick="openNewRequest()">+ New Request</button></div>' +
-    '<div class="panel" id="requests-panel"><div class="empty-row">Loading…</div></div>';
+    '<div class="page-head"><h1>Overview</h1><button class="gbtn" onclick="openNewRequest()">+ New Request</button></div>' +
+    '<div class="panel" id="overview-panel"><div class="empty-row">Loading country status…</div></div>';
+  try{
+    const d = await api('/overview');
+    const rows = d.byCountry || [];
+    const panel = document.getElementById('overview-panel');
+    if(!rows.length){ panel.innerHTML = '<div class="empty-row">No employee data found.</div>'; return; }
+    panel.innerHTML = '<table><thead><tr><th>Country</th><th>Total</th><th>OK</th><th>Missing Optional</th><th>Missing Mandatory</th><th>Inactive / Leave</th></tr></thead><tbody>' +
+      rows.map(function(r){
+        return '<tr>' +
+          '<td>'+esc(r.country)+'</td>' +
+          '<td>'+r.total+'</td>' +
+          '<td style="color:#1E7A45;font-weight:700;">'+r.OK+'</td>' +
+          '<td style="color:#B07A00;">'+r.OK_MISSING_OPTIONAL+'</td>' +
+          '<td style="color:#B02A2A;font-weight:700;">'+r.MISSING_MANDATORY+'</td>' +
+          '<td style="color:var(--t3);">'+(r.INACTIVE+r.ON_LEAVE)+'</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){ document.getElementById('overview-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+
+  buildYearTree();
+}
+
+// ── Sidebar: Year > Month tree, built from real requests ────────
+async function buildYearTree(){
+  const tree = document.getElementById('year-tree');
   try{
     const d = await api('/requests');
     const rows = d.requests || [];
-    const panel = document.getElementById('requests-panel');
-    if(!rows.length){ panel.innerHTML = '<div class="empty-row">No requests yet. Create the first one above.</div>'; return; }
-    panel.innerHTML = '<table><thead><tr><th>Month</th><th>Payment Date</th><th>Status</th><th></th></tr></thead><tbody>' +
-      rows.map(function(r){
-        return '<tr style="cursor:pointer;" onclick="nav(\'request\','+r.id+')">' +
-          '<td>'+esc(r.month_label)+'</td>' +
-          '<td>'+esc(r.payment_date)+'</td>' +
-          '<td>'+(r.status==='open' ? '<span style="color:#1E7A45;font-weight:700;">Open</span>' : '<span style="color:var(--t3);font-weight:700;">Closed</span>')+'</td>' +
-          '<td style="color:var(--accent);font-weight:700;">Open →</td>' +
-        '</tr>';
+    const byYear = {};
+    rows.forEach(function(r){
+      const year = (r.payment_date||'').slice(0,4) || 'Unknown';
+      if(!byYear[year]) byYear[year] = [];
+      byYear[year].push(r);
+    });
+    const years = Object.keys(byYear).sort().reverse();
+    tree.innerHTML = years.map(function(year){
+      return '<div class="side-label">'+year+'</div>' +
+        byYear[year].map(function(r){
+          const label = r.month_label.replace(' '+year,'');
+          return '<button class="nav sub" data-page="request-'+r.id+'" onclick="nav(\'request\','+r.id+')">'+esc(label)+'</button>';
+        }).join('');
+    }).join('');
+  }catch(e){ tree.innerHTML = ''; }
+}
+
+// ── Field Map (static reference, per country) ───────────────────
+async function renderFieldMap(){
+  const main = document.getElementById('main');
+  main.innerHTML = '<div class="page-head"><h1>Field Map</h1></div><div class="panel" id="fieldmap-panel"><div class="empty-row">Loading…</div></div>';
+  try{
+    const d = await api('/field-map');
+    const req = d.requirements || {};
+    const panel = document.getElementById('fieldmap-panel');
+    panel.innerHTML = '<table><thead><tr><th>Country</th><th>Mandatory fields</th><th>Optional fields</th></tr></thead><tbody>' +
+      Object.keys(req).sort().map(function(c){
+        return '<tr><td>'+esc(c)+'</td><td>'+esc(req[c].mandatory.join(', '))+'</td><td>'+esc(req[c].optional.join(', ')||'—')+'</td></tr>';
       }).join('') + '</tbody></table>';
-  }catch(e){ document.getElementById('requests-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+  }catch(e){ document.getElementById('fieldmap-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
 }
 
 function openNewRequest(){
@@ -387,6 +431,11 @@ async function renderRequestDetail(id){
           '<button class="gbtn" onclick="openAddEmployees()">+ Add Employees</button>' +
         '</div>' +
       '</div>' +
+      '<p style="font-size:12.5px;color:var(--t2);margin-bottom:16px;">' +
+        'Payment date: <strong style="color:var(--t1);">'+esc(req.payment_date)+'</strong>' +
+        (req.personio_deadline_1 ? ' · Personio deadline: <strong style="color:var(--t1);">'+esc(req.personio_deadline_1)+'</strong>' : '') +
+        (req.personio_deadline_2 ? ' / <strong style="color:var(--t1);">'+esc(req.personio_deadline_2)+'</strong>' : '') +
+      '</p>' +
       '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'+countsHtml+'</div>' +
       '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
         '<select class="mini-select" id="bulk-email-type">' +
@@ -407,14 +456,15 @@ async function renderRequestDetail(id){
 function renderEmployeeTable(employees){
   const panel = document.getElementById('employees-panel');
   if(!employees.length){ panel.innerHTML = '<div class="empty-row">No employees added yet.</div>'; return; }
-  panel.innerHTML = '<table><thead><tr><th></th><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing</th><th></th></tr></thead><tbody>' +
+  panel.innerHTML = '<table><thead><tr><th><input type="checkbox" onchange="toggleSelectAll(this.checked)"></th><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing</th><th></th></tr></thead><tbody>' +
     employees.map(function(e){
       const missing = e.status==='OK_MISSING_OPTIONAL' ? e.missing_optional : e.missing_mandatory;
       const resolveBtn = e.status==='AMBIGUOUS'
         ? '<button class="sbtn ok" onclick=\'openResolveAmbiguous('+e.id+', '+JSON.stringify(e.ambiguous_candidates||'').replace(/'/g,'&#39;')+')\'>Resolve</button>'
         : '';
-      const checkbox = e.status!=='INACTIVE' && e.status!=='NOT_FOUND' && e.status!=='AMBIGUOUS'
-        ? '<input type="checkbox" onchange="toggleSelect('+e.id+', this.checked)">'
+      const selectable = e.status!=='INACTIVE' && e.status!=='NOT_FOUND' && e.status!=='AMBIGUOUS';
+      const checkbox = selectable
+        ? '<input type="checkbox" class="row-check" data-id="'+e.id+'" onchange="toggleSelect('+e.id+', this.checked)">'
         : '';
       return '<tr>' +
         '<td>'+checkbox+'</td>' +
@@ -426,6 +476,13 @@ function renderEmployeeTable(employees){
         '<td>'+resolveBtn+'</td>' +
       '</tr>';
     }).join('') + '</tbody></table>';
+}
+
+function toggleSelectAll(checked){
+  document.querySelectorAll('.row-check').forEach(function(cb){
+    cb.checked = checked;
+    toggleSelect(parseInt(cb.dataset.id,10), checked);
+  });
 }
 
 function toggleSelect(id, checked){
