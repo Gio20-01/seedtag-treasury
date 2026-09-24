@@ -111,6 +111,9 @@ export default {
       if (path === '/api/treasury/overview' && request.method === 'GET') {
         return await getOverviewStats(env, accessToken, origin);
       }
+      if (path === '/api/treasury/roster-check' && request.method === 'GET') {
+        return await getRosterCheck(env, accessToken, origin);
+      }
       if (path === '/api/treasury/field-map' && request.method === 'GET') {
         const { REQUIREMENTS } = await import('./matching.js');
         return json({ requirements: REQUIREMENTS }, 200, origin);
@@ -279,6 +282,18 @@ async function getOverviewStats(env, accessToken, origin) {
   return json({ byCountry }, 200, origin);
 }
 
+// "Check Employees" globale (Overview) - TUTTI gli employee del roster,
+// nessun paste. Mai valori bancari, solo nomi dei campi mancanti.
+async function getRosterCheck(env, accessToken, origin) {
+  const [bankRows, adjRows] = await Promise.all([
+    readSheetTab(accessToken, env.OPERATIONAL_SHEET_ID, 'Personio Bank Data'),
+    readSheetTab(accessToken, env.SHEET_ID, env.ADJDATA_TAB)
+  ]);
+  const { evaluateRosterDetailed } = await import('./matching.js');
+  const result = evaluateRosterDetailed(bankRows, adjRows);
+  return json(result, 200, origin);
+}
+
 // ------------------------------------------------------------
 // Monthly requests
 // ------------------------------------------------------------
@@ -395,12 +410,22 @@ async function refreshPersonioNow(env, origin) {
 // ------------------------------------------------------------
 // Emails - calls the standalone Treasury_Email_Sender.gs webapp
 // ------------------------------------------------------------
+// Mappa status -> tipo di email applicabile, usata da type='auto'. null = non
+// applicabile (nessuna email da mandare per questo status - inactive, leave, ecc).
+function autoEmailTypeFor(status) {
+  if (status === 'MISSING_MANDATORY') return 'missing_mandatory';
+  if (status === 'OK_MISSING_OPTIONAL') return 'optional_reminder';
+  if (status === 'OK') return 'confirm';
+  return null;
+}
+
 async function sendEmails(request, env, requestId, actorEmail, origin) {
   const body = await request.json();
   const reqRow = await env.DB.prepare('SELECT month_label FROM treasury_requests WHERE id = ?').bind(requestId).first();
   if (!reqRow) return json({ error: 'request not found' }, 404, origin);
 
   const ccOverride = await getSetting(env, 'treasury_cc', ''); // '' = usa il default hardcoded nel GAS
+  const isAuto = body.type === 'auto';
 
   const placeholders = body.employeeIds.map(() => '?').join(',');
   const { results: employees } = await env.DB.prepare(
@@ -409,14 +434,20 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
 
   const outcomes = [];
   for (const emp of employees) {
+    const effectiveType = isAuto ? autoEmailTypeFor(emp.status) : body.type;
+    if (!effectiveType) {
+      outcomes.push({ email: emp.matched_email || emp.input_email, ok: false, skipped: true, reason: 'no applicable template for status ' + emp.status });
+      continue;
+    }
+
     const params = new URLSearchParams({
       secret: env.TREASURY_GAS_SECRET,
-      type: body.type,
+      type: effectiveType,
       toEmail: emp.matched_email || emp.input_email,
       toName: emp.input_name || '',
       monthLabel: reqRow.month_label,
       deadlineDate: body.deadlineDate || '',
-      missingFields: body.type === 'optional_reminder' ? emp.missing_optional : emp.missing_mandatory
+      missingFields: effectiveType === 'optional_reminder' ? emp.missing_optional : emp.missing_mandatory
     });
     if (ccOverride) params.set('cc', ccOverride);
 
@@ -429,7 +460,7 @@ async function sendEmails(request, env, requestId, actorEmail, origin) {
 
     await env.DB.prepare(
       'INSERT INTO treasury_email_log (request_id, employee_email, email_type, sent_by, ok) VALUES (?, ?, ?, ?, ?)'
-    ).bind(requestId, emp.matched_email || emp.input_email, body.type, actorEmail, ok ? 1 : 0).run();
+    ).bind(requestId, emp.matched_email || emp.input_email, effectiveType, actorEmail, ok ? 1 : 0).run();
 
     outcomes.push({ email: emp.matched_email || emp.input_email, ok });
   }
