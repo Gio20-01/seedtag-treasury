@@ -153,6 +153,19 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
   </div>
 </div>
 
+<div id="overlay-quickcheck" class="overlay">
+  <div class="gbox">
+    <h2>Check Employees</h2>
+    <p>Paste a list to check their status right now - nothing gets saved, this is just a quick lookup.</p>
+    <textarea id="qc-textarea" rows="8" placeholder="jane.doe@seedtag.com
+John Smith, john.smith@seedtag.com"></textarea>
+    <div class="row">
+      <button class="gbtn" onclick="submitQuickCheck()">Check</button>
+      <button class="gbtn ghost" onclick="document.getElementById('overlay-quickcheck').classList.remove('open')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div id="overlay-newrequest" class="overlay">
   <div class="gbox">
     <h2>New Request</h2>
@@ -321,7 +334,13 @@ async function renderOverview(){
   const main = document.getElementById('main');
   main.innerHTML =
     '<div class="page-head"><h1>Overview</h1><button class="gbtn" onclick="openNewRequest()">+ New Request</button></div>' +
-    '<div class="panel" id="overview-panel"><div class="empty-row">Loading country status…</div></div>';
+    '<div class="panel" id="overview-panel" style="margin-bottom:24px;"><div class="empty-row">Loading country status…</div></div>' +
+    '<div class="page-head" style="margin-bottom:12px;"><h1 style="font-size:15px;">Operations</h1></div>' +
+    '<div style="display:flex;gap:10px;margin-bottom:20px;">' +
+      '<button class="gbtn ghost" onclick="doRefreshPersonio()" id="refresh-btn">↻ Refresh Personio Data</button>' +
+      '<button class="gbtn ghost" onclick="openQuickCheck()">🔍 Check Employees</button>' +
+    '</div>' +
+    '<div id="quickcheck-results"></div>';
   try{
     const d = await api('/overview');
     const rows = d.byCountry || [];
@@ -342,6 +361,45 @@ async function renderOverview(){
 
   buildYearTree();
 }
+
+async function doRefreshPersonio(){
+  const btn = document.getElementById('refresh-btn');
+  btn.disabled = true; btn.textContent = 'Refreshing…';
+  try{
+    const d = await api('/refresh-personio', { method:'POST' });
+    toast(d.ok ? 'Personio data refreshed' : 'Refresh failed: '+(d.detail && d.detail.error || 'unknown error'));
+  }catch(e){ toast('Error: '+e.message); }
+  btn.disabled = false; btn.textContent = '↻ Refresh Personio Data';
+}
+
+function openQuickCheck(){
+  document.getElementById('qc-textarea').value = '';
+  document.getElementById('quickcheck-results').innerHTML = '';
+  document.getElementById('overlay-quickcheck').classList.add('open');
+}
+async function submitQuickCheck(){
+  const text = document.getElementById('qc-textarea').value;
+  const rows = parsePastedEmployees(text);
+  if(!rows.length){ toast('No valid emails found'); return; }
+  try{
+    const d = await api('/quick-check', { method:'POST', body:{ rows: rows } });
+    document.getElementById('overlay-quickcheck').classList.remove('open');
+    const employees = d.employees || [];
+    document.getElementById('quickcheck-results').innerHTML =
+      '<div class="panel"><table><thead><tr><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing</th></tr></thead><tbody>' +
+      employees.map(function(e){
+        const missing = e.status==='OK_MISSING_OPTIONAL' ? e.missing_optional : e.missing_mandatory;
+        return '<tr>' +
+          '<td>'+esc(e.input_name||'—')+'</td>' +
+          '<td>'+esc(e.matched_email||e.input_email)+'</td>' +
+          '<td>'+esc(e.country||'—')+'</td>' +
+          '<td>'+statusBadge(e.status)+'</td>' +
+          '<td style="font-size:11.5px;color:var(--t2);">'+esc(missing||'—')+'</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table></div>';
+  }catch(e){ toast('Error: '+e.message); }
+}
+
 
 // ── Sidebar: Year > Month tree, built from real requests ────────
 async function buildYearTree(){
