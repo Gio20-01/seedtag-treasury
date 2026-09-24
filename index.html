@@ -143,12 +143,55 @@ td{border-top:1px solid var(--b1);padding:11px 16px;font-size:12.8px;vertical-al
   </div>
   <div class="shell2">
     <aside class="side" id="sideMenu">
-      <div class="side-label">Year</div>
-      <button class="nav active" data-page="overview" onclick="nav('overview')">2026</button>
+      <div class="side-label">Requests</div>
+      <button class="nav active" data-page="overview" onclick="nav('overview')">Overview</button>
       <div class="side-label" id="config-label" style="display:none;">Administration</div>
       <button class="nav" id="config-nav" data-page="config" style="display:none;" onclick="nav('config')">⚙ Config</button>
     </aside>
     <main class="main" id="main"></main>
+  </div>
+</div>
+
+<div id="overlay-newrequest" class="overlay">
+  <div class="gbox">
+    <h2>New Request</h2>
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Month label</label>
+    <input id="nr-month" placeholder="e.g. August 2026">
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Payment date</label>
+    <input id="nr-payment" type="date">
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Personio changes deadline 1 (optional)</label>
+    <input id="nr-deadline1" type="date">
+    <label style="font-size:12px;color:var(--t2);font-weight:600;">Personio changes deadline 2 (optional)</label>
+    <input id="nr-deadline2" type="date">
+    <div class="row">
+      <button class="gbtn" onclick="createRequestSubmit()">Create</button>
+      <button class="gbtn ghost" onclick="document.getElementById('overlay-newrequest').classList.remove('open')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay-addemployees" class="overlay">
+  <div class="gbox">
+    <h2>Add Employees</h2>
+    <p>Paste one per line: just an email, or "Name, email@seedtag.com".</p>
+    <textarea id="ae-textarea" rows="8" placeholder="jane.doe@seedtag.com
+John Smith, john.smith@seedtag.com"></textarea>
+    <div class="row">
+      <button class="gbtn" onclick="submitAddEmployees()">Add</button>
+      <button class="gbtn ghost" onclick="document.getElementById('overlay-addemployees').classList.remove('open')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="overlay-resolve-ambiguous" class="overlay">
+  <div class="gbox">
+    <h2>Resolve ambiguous match</h2>
+    <p>Multiple Personio employees share this name. Pick the correct one:</p>
+    <div id="ra-options"></div>
+    <div class="row">
+      <button class="gbtn" id="btn-confirm-resolve-ambiguous">Confirm</button>
+      <button class="gbtn ghost" id="btn-cancel-resolve-ambiguous">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -232,19 +275,232 @@ function initApp(){
   nav('overview');
 }
 
-function nav(page){
+function nav(page, param){
   document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active', b.dataset.page===page));
   if(page==='overview') renderOverview();
   if(page==='config') renderConfig('access-requests');
+  if(page==='request') renderRequestDetail(param);
 }
 
-function renderOverview(){
-  document.getElementById('main').innerHTML =
-    '<div class="placeholder-card">' +
-    '<h2>You are in.</h2>' +
-    '<p>Auth bootstrap is working. Next up: the real dashboard - monthly requests list, create new request, and the detail view with employee status + email actions.</p>' +
-    '</div>';
+// ══════════════════════════════════════════════════════════
+// OVERVIEW - monthly requests list + create
+// ══════════════════════════════════════════════════════════
+const STATUS_COLORS = {
+  OK: '#e6f4ea', OK_MISSING_OPTIONAL: '#fff4e0', MISSING_MANDATORY: '#fbe9e9',
+  INACTIVE: '#f0eeee', ON_LEAVE: '#f0eeee', NOT_FOUND: '#fdf0d8',
+  AMBIGUOUS: '#fdf0d8', COUNTRY_NOT_MAPPED: '#fdf0d8'
+};
+const STATUS_TEXT = {
+  OK: '#1E7A45', OK_MISSING_OPTIONAL: '#B07A00', MISSING_MANDATORY: '#B02A2A',
+  INACTIVE: '#6b6562', ON_LEAVE: '#6b6562', NOT_FOUND: '#8a5a00',
+  AMBIGUOUS: '#8a5a00', COUNTRY_NOT_MAPPED: '#8a5a00'
+};
+function statusBadge(status){
+  const bg = STATUS_COLORS[status] || '#f0eeee', col = STATUS_TEXT[status] || '#6b6562';
+  return '<span style="display:inline-block;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700;background:'+bg+';color:'+col+';">'+esc(status.replace(/_/g,' '))+'</span>';
 }
+
+// Default payment date: 10th of next month if today > 10th, else 10th of this month
+function suggestPaymentDate(){
+  const now = new Date();
+  let y = now.getFullYear(), m = now.getMonth();
+  if(now.getDate() > 10){ m += 1; if(m > 11){ m = 0; y += 1; } }
+  return new Date(y, m, 10);
+}
+function fmtDateInput(d){ return d.toISOString().slice(0,10); }
+function monthLabelFromDate(dStr){
+  if(!dStr) return '';
+  const d = new Date(dStr+'T00:00:00');
+  const M = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  return M[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+async function renderOverview(){
+  const main = document.getElementById('main');
+  main.innerHTML =
+    '<div class="page-head"><h1>Monthly Requests</h1><button class="gbtn" onclick="openNewRequest()">+ New Request</button></div>' +
+    '<div class="panel" id="requests-panel"><div class="empty-row">Loading…</div></div>';
+  try{
+    const d = await api('/requests');
+    const rows = d.requests || [];
+    const panel = document.getElementById('requests-panel');
+    if(!rows.length){ panel.innerHTML = '<div class="empty-row">No requests yet. Create the first one above.</div>'; return; }
+    panel.innerHTML = '<table><thead><tr><th>Month</th><th>Payment Date</th><th>Status</th><th></th></tr></thead><tbody>' +
+      rows.map(function(r){
+        return '<tr style="cursor:pointer;" onclick="nav(\'request\','+r.id+')">' +
+          '<td>'+esc(r.month_label)+'</td>' +
+          '<td>'+esc(r.payment_date)+'</td>' +
+          '<td>'+(r.status==='open' ? '<span style="color:#1E7A45;font-weight:700;">Open</span>' : '<span style="color:var(--t3);font-weight:700;">Closed</span>')+'</td>' +
+          '<td style="color:var(--accent);font-weight:700;">Open →</td>' +
+        '</tr>';
+      }).join('') + '</tbody></table>';
+  }catch(e){ document.getElementById('requests-panel').innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+}
+
+function openNewRequest(){
+  const payment = suggestPaymentDate();
+  document.getElementById('overlay-newrequest').classList.add('open');
+  document.getElementById('nr-payment').value = fmtDateInput(payment);
+  document.getElementById('nr-month').value = monthLabelFromDate(fmtDateInput(payment));
+  document.getElementById('nr-deadline1').value = '';
+  document.getElementById('nr-deadline2').value = '';
+}
+async function createRequestSubmit(){
+  const month_label = document.getElementById('nr-month').value.trim();
+  const payment_date = document.getElementById('nr-payment').value;
+  const personio_deadline_1 = document.getElementById('nr-deadline1').value;
+  const personio_deadline_2 = document.getElementById('nr-deadline2').value;
+  if(!month_label || !payment_date){ toast('Month label and payment date are required'); return; }
+  try{
+    const d = await api('/requests', { method:'POST', body:{ month_label:month_label, payment_date:payment_date, personio_deadline_1:personio_deadline_1, personio_deadline_2:personio_deadline_2 } });
+    document.getElementById('overlay-newrequest').classList.remove('open');
+    nav('request', d.id);
+  }catch(e){ toast('Error: '+e.message); }
+}
+
+// ══════════════════════════════════════════════════════════
+// REQUEST DETAIL
+// ══════════════════════════════════════════════════════════
+let _currentRequestId = null;
+let _selectedEmployeeIds = new Set();
+
+async function renderRequestDetail(id){
+  _currentRequestId = id;
+  _selectedEmployeeIds = new Set();
+  const main = document.getElementById('main');
+  main.innerHTML = '<div class="empty-row">Loading…</div>';
+  try{
+    const d = await api('/requests/'+id);
+    const req = d.request, employees = d.employees || [], counts = d.statusCounts || {};
+
+    const countsHtml = Object.keys(counts).map(function(k){
+      return '<div style="background:var(--white);border:1px solid var(--b1);border-radius:var(--rmd);padding:12px 16px;min-width:120px;">' +
+        '<div style="font-size:20px;font-weight:800;">'+counts[k]+'</div>' +
+        '<div style="font-size:11px;color:var(--t2);">'+esc(k.replace(/_/g,' '))+'</div></div>';
+    }).join('');
+
+    main.innerHTML =
+      '<div class="page-head">' +
+        '<h1>'+esc(req.month_label)+'</h1>' +
+        '<div class="row" style="display:flex;gap:8px;">' +
+          '<button class="gbtn ghost" onclick="nav(\'overview\')">← Back</button>' +
+          '<button class="gbtn" onclick="openAddEmployees()">+ Add Employees</button>' +
+        '</div>' +
+      '</div>' +
+      '<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px;">'+countsHtml+'</div>' +
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:12px;">' +
+        '<select class="mini-select" id="bulk-email-type">' +
+          '<option value="missing_mandatory">Missing Mandatory</option>' +
+          '<option value="optional_reminder">Optional Reminder</option>' +
+          '<option value="confirm">Confirm</option>' +
+        '</select>' +
+        '<input class="mini-input" id="bulk-deadline" placeholder="Deadline text (e.g. Tomorrow, Aug 7)" style="max-width:220px;">' +
+        '<button class="sbtn save" onclick="sendBulkEmail()">Send to selected</button>' +
+        '<span id="selection-count" style="font-size:12px;color:var(--t2);margin-left:6px;"></span>' +
+      '</div>' +
+      '<div class="panel" id="employees-panel"></div>';
+
+    renderEmployeeTable(employees);
+  }catch(e){ main.innerHTML = '<div class="empty-row">Error: '+esc(e.message)+'</div>'; }
+}
+
+function renderEmployeeTable(employees){
+  const panel = document.getElementById('employees-panel');
+  if(!employees.length){ panel.innerHTML = '<div class="empty-row">No employees added yet.</div>'; return; }
+  panel.innerHTML = '<table><thead><tr><th></th><th>Name</th><th>Email</th><th>Country</th><th>Status</th><th>Missing</th><th></th></tr></thead><tbody>' +
+    employees.map(function(e){
+      const missing = e.status==='OK_MISSING_OPTIONAL' ? e.missing_optional : e.missing_mandatory;
+      const resolveBtn = e.status==='AMBIGUOUS'
+        ? '<button class="sbtn ok" onclick=\'openResolveAmbiguous('+e.id+', '+JSON.stringify(e.ambiguous_candidates||'').replace(/'/g,'&#39;')+')\'>Resolve</button>'
+        : '';
+      const checkbox = e.status!=='INACTIVE' && e.status!=='NOT_FOUND' && e.status!=='AMBIGUOUS'
+        ? '<input type="checkbox" onchange="toggleSelect('+e.id+', this.checked)">'
+        : '';
+      return '<tr>' +
+        '<td>'+checkbox+'</td>' +
+        '<td>'+esc(e.input_name||'—')+'</td>' +
+        '<td>'+esc(e.matched_email||e.input_email)+'</td>' +
+        '<td>'+esc(e.country||'—')+'</td>' +
+        '<td>'+statusBadge(e.status)+'</td>' +
+        '<td style="font-size:11.5px;color:var(--t2);">'+esc(missing||'—')+'</td>' +
+        '<td>'+resolveBtn+'</td>' +
+      '</tr>';
+    }).join('') + '</tbody></table>';
+}
+
+function toggleSelect(id, checked){
+  if(checked) _selectedEmployeeIds.add(id); else _selectedEmployeeIds.delete(id);
+  document.getElementById('selection-count').textContent = _selectedEmployeeIds.size + ' selected';
+}
+
+async function sendBulkEmail(){
+  if(!_selectedEmployeeIds.size){ toast('Select at least one employee'); return; }
+  const type = document.getElementById('bulk-email-type').value;
+  const deadlineDate = document.getElementById('bulk-deadline').value;
+  try{
+    const d = await api('/requests/'+_currentRequestId+'/email', {
+      method:'POST', body:{ employeeIds: Array.from(_selectedEmployeeIds), type:type, deadlineDate:deadlineDate }
+    });
+    const okCount = (d.outcomes||[]).filter(function(o){return o.ok;}).length;
+    toast(okCount + '/' + (d.outcomes||[]).length + ' emails sent');
+    renderRequestDetail(_currentRequestId);
+  }catch(e){ toast('Error: '+e.message); }
+}
+
+// ── Add employees (paste) ───────────────────────────────────
+function openAddEmployees(){
+  document.getElementById('ae-textarea').value = '';
+  document.getElementById('overlay-addemployees').classList.add('open');
+}
+function parsePastedEmployees(text){
+  // Accepts lines like: "email@x.com" or "Name, email@x.com" or "Name <email@x.com>"
+  return text.split('\n').map(function(line){
+    line = line.trim();
+    if(!line) return null;
+    const emailMatch = line.match(/[^\s<>,]+@[^\s<>,]+/);
+    if(!emailMatch) return null;
+    const email = emailMatch[0];
+    const name = line.replace(email,'').replace(/[<>,]/g,'').trim();
+    return { name: name, email: email };
+  }).filter(Boolean);
+}
+async function submitAddEmployees(){
+  const text = document.getElementById('ae-textarea').value;
+  const rows = parsePastedEmployees(text);
+  if(!rows.length){ toast('No valid emails found'); return; }
+  try{
+    await api('/requests/'+_currentRequestId+'/employees', { method:'POST', body:{ rows: rows } });
+    document.getElementById('overlay-addemployees').classList.remove('open');
+    toast(rows.length + ' employees added');
+    renderRequestDetail(_currentRequestId);
+  }catch(e){ toast('Error: '+e.message); }
+}
+
+// ── Resolve ambiguous ────────────────────────────────────────
+let _resolvingEmployeeId = null;
+function openResolveAmbiguous(employeeId, candidatesCsv){
+  _resolvingEmployeeId = employeeId;
+  const candidates = String(candidatesCsv||'').split(',').map(function(s){return s.trim();}).filter(Boolean);
+  document.getElementById('ra-options').innerHTML = candidates.map(function(c){
+    return '<label style="display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;">' +
+      '<input type="radio" name="ra-choice" value="'+esc(c)+'"> '+esc(c) +
+    '</label>';
+  }).join('');
+  document.getElementById('overlay-resolve-ambiguous').classList.add('open');
+}
+document.getElementById('btn-cancel-resolve-ambiguous').addEventListener('click', function(){
+  document.getElementById('overlay-resolve-ambiguous').classList.remove('open');
+});
+document.getElementById('btn-confirm-resolve-ambiguous').addEventListener('click', async function(){
+  const picked = document.querySelector('input[name="ra-choice"]:checked');
+  if(!picked){ toast('Pick one email'); return; }
+  try{
+    await api('/requests/'+_currentRequestId+'/employees/'+_resolvingEmployeeId+'/resolve-ambiguous', { method:'POST', body:{ chosenEmail: picked.value } });
+    document.getElementById('overlay-resolve-ambiguous').classList.remove('open');
+    toast('Resolved');
+    renderRequestDetail(_currentRequestId);
+  }catch(e){ toast('Error: '+e.message); }
+});
 
 let _configTab = 'access-requests';
 
